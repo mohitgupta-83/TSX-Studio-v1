@@ -70,6 +70,9 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     const [isDragOver, setIsDragOver] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState(CLAUDE_PRESETS[0].id);
     const [lastLog, setLastLog] = useState<string>("Initializing...");
+    const [captionStyle, setCaptionStyle] = useState("clean");
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [generatedProjectId, setGeneratedProjectId] = useState<string | null>(null);
 
     // Electron Progress Listener
     useEffect(() => {
@@ -282,6 +285,65 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
         toast.success("Job removed from history");
     };
 
+    const handleGenerateTSX = async () => {
+        if (!previewJson) return;
+
+        setIsGenerating(true);
+        try {
+            // 1. Generate TSX
+            const res = await fetch("/api/generate-tsx", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    json: JSON.parse(previewJson),
+                    style: captionStyle,
+                }),
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Failed to generate TSX");
+
+            const tsxCode = data.tsxCode;
+            toast.success("Captions generated successfully");
+
+            // 2. Create Project
+            const projectRes = await fetch("/api/projects", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: "Caption Animation" }),
+            });
+            const projectData = await projectRes.json();
+            if (!projectRes.ok) throw new Error("Failed to create project");
+
+            // 3. Create ProjectVersion
+            const versionRes = await fetch(`/api/projects/${projectData.id}/versions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code: tsxCode, title: "Generated Captions" }),
+            });
+            if (!versionRes.ok) throw new Error("Failed to save TSX");
+
+            // 4. Redirect to Studio
+            setGeneratedProjectId(projectData.id);
+            router.push(`/studio/${projectData.id}`);
+
+        } catch (error: any) {
+            if (error.message === "Not enough credits") {
+                toast.error("Not enough credits", {
+                    description: "You need more credits to generate AI motions.",
+                    action: {
+                        label: "Get Credits",
+                        onClick: () => router.push("/dashboard/credits")
+                    }
+                });
+            } else {
+                toast.error(error.message || "Failed to generate captions");
+            }
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
     const getStatusBadge = (job: TranscriptionJob) => {
         switch (job.status) {
             case "DONE":
@@ -403,12 +465,9 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                             onDrop={handleDrop}
                             onClick={() => fileInputRef.current?.click()}
                             className={`
-                                relative border-2 border-dashed rounded-3xl p-12 text-center cursor-pointer transition-all duration-300
-                                ${isDragOver
-                                    ? "border-primary bg-primary/5 scale-[1.02]"
-                                    : "border-white/10 hover:border-white/20 bg-card/30"
-                                }
-                                ${selectedFile ? "border-primary bg-primary/5" : ""}
+                        relative border-2 border-dashed rounded-3xl p-12 text-center cursor-pointer transition-all duration-300
+                        ${isDragOver ? "border-primary bg-primary/5 scale-[1.02]" : "border-white/10 hover:border-white/20 bg-card/30"}
+                        ${selectedFile ? "border-primary bg-primary/5" : ""}
                             `}
                         >
                             <input
@@ -710,6 +769,49 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                             </div>
                         </div>
 
+                        {/* Generate TSX Panel */}
+                        {previewJson && (
+                            <div className="space-y-4 pt-4 border-t border-white/10">
+                                <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                    Generate Captions
+                                </h3>
+                                <div className="flex gap-4">
+                                    <Select value={captionStyle} onValueChange={setCaptionStyle}>
+                                        <SelectTrigger className="h-12 bg-card/50 border-white/10 flex-1 uppercase text-xs tracking-widest font-bold">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
+                                            <SelectItem value="clean">Clean Subtitles</SelectItem>
+                                            <SelectItem value="tiktok">TikTok Viral</SelectItem>
+                                            <SelectItem value="neon">Neon Glow</SelectItem>
+                                            <SelectItem value="mrbeast">MrBeast Style</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    {!generatedProjectId ? (
+                                        <Button
+                                            onClick={handleGenerateTSX}
+                                            disabled={isGenerating}
+                                            className="h-12 flex-1 rounded-xl font-black italic uppercase text-xs tracking-widest shadow-lg shadow-primary/20 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/50"
+                                        >
+                                            {isGenerating ? (
+                                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating</>
+                                            ) : (
+                                                <><Sparkles className="w-4 h-4 mr-2" /> Generate TSX</>
+                                            )}
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            onClick={() => router.push(`/studio/${generatedProjectId}`)}
+                                            className="h-12 flex-1 rounded-xl font-black italic uppercase text-xs tracking-widest shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground"
+                                        >
+                                            Edit Animation
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Action Buttons */}
                         {previewJson && (
                             <div className="flex gap-4">
@@ -744,7 +846,8 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                         )}
                     </div>
                 </div>
-            )}
-        </div>
+            )
+            }
+        </div >
     );
 }

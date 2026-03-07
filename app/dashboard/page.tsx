@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { DashboardClient } from "./dashboard-client";
+import { getCredits } from "@/lib/credits/creditService";
 
 export default async function DashboardPage() {
     const session = await auth();
@@ -69,12 +70,15 @@ export default async function DashboardPage() {
         errorCount,
     };
 
+    const credits = await getCredits(session.user.id);
+
     return (
         <Suspense fallback={<div>Loading Dashboard...</div>}>
             <DashboardClient
                 projects={serializedProjects}
                 stats={stats}
                 userName={session.user.name || session.user.email || "User"}
+                credits={credits}
             />
         </Suspense>
     );

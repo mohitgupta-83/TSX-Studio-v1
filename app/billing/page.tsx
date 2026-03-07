@@ -126,8 +126,10 @@ export default async function BillingPage() {
                             )}
                         </CardContent>
                         <CardFooter>
-                            <Button variant="ghost" className="w-full text-xs gap-2">
-                                View All History <MoveRight className="w-3 h-3" />
+                            <Button variant="ghost" className="w-full text-xs gap-2" asChild>
+                                <Link href="/dashboard/credits">
+                                    View All History <MoveRight className="w-3 h-3" />
+                                </Link>
                             </Button>
                         </CardFooter>
                     </Card>

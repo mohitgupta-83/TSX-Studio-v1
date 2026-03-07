@@ -14,6 +14,8 @@ model User {
   emailVerified        DateTime?
   image                String?
   plan                 String              @default("FREE")
+  creditsBalance       Int                 @default(0)
+  referredById         String?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   stripeCustomerId     String?             @unique
@@ -22,7 +24,8 @@ model User {
   logs                 ActivityLog[]
   creditTransactions   CreditTransaction[]
   projects             Project[]
-  referralCode         ReferralCode?
+  referralCode         String?             @unique
+  referralCodeModel    ReferralCode?
   referralReceived     ReferralEvent?      @relation("ReferredUser")
   referralsMade        ReferralEvent[]     @relation("Referrer")
   renderJobs           RenderJob[]
@@ -51,6 +54,7 @@ model CreditTransaction {
   userId                String
   type                  String
   amount                Int
+  description           String?
   renderJobId           String?
   stripePaymentIntentId String?
   createdAt             DateTime @default(now())
@@ -145,15 +149,21 @@ model RenderUsage {
 
 model Template {
   id              String           @id @default(cuid())
+  slug            String           @unique @default(cuid())
   title           String
+  name            String? // Alias for title as requested
   description     String
   category        String
   tags            String
   previewImageUrl String?
+  previewVideoUrl String?
   code            String
+  tsxCode         String? // Keep backwards compatible
   isPublic        Boolean          @default(false)
   isFeatured      Boolean          @default(false)
+  status          String           @default("PENDING")
   authorId        String
+  usesCount       Int              @default(0)
   downloadsCount  Int              @default(0)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt

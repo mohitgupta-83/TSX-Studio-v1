@@ -58,9 +58,10 @@ interface DashboardClientProps {
     projects: Project[];
     stats: Stats;
     userName: string;
+    credits: number;
 }
 
-export function DashboardClient({ projects: initialProjects, stats, userName }: DashboardClientProps) {
+export function DashboardClient({ projects: initialProjects, stats, userName, credits }: DashboardClientProps) {
     const searchParams = useSearchParams();
     const showOnboarding = searchParams.get("new") === "true";
     const router = useRouter();
@@ -110,8 +111,38 @@ export function DashboardClient({ projects: initialProjects, stats, userName }: 
                     <h1 className="text-3xl font-bold tracking-tight italic">Your <span className="text-primary italic">Productions</span></h1>
                     <p className="text-muted-foreground">Manage and preview your high-end animation studio files.</p>
                 </div>
-                <CreateProjectDialog onSuccess={handleProjectCreated} />
+                <div className="flex items-center gap-4">
+                    <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 mr-4">
+                        <CardContent className="p-3 px-5 flex items-center justify-between gap-6">
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-primary tracking-widest leading-tight">Credits Available</p>
+                                <h3 className="text-2xl font-black italic mt-0">{credits}</h3>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <Link href="/billing">
+                                    <Button size="sm" variant="default" className="h-7 text-[10px] px-3 font-bold uppercase w-full">Get More</Button>
+                                </Link>
+                                <Link href="/referrals">
+                                    <Button size="sm" variant="outline" className="h-7 text-[10px] px-3 font-bold uppercase w-full border-primary/30 text-primary hover:bg-primary/10">Invite Friends</Button>
+                                </Link>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <CreateProjectDialog onSuccess={handleProjectCreated} />
+                </div>
             </div>
+
+            {credits === 0 && (
+                <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl flex items-center justify-between">
+                    <div>
+                        <h4 className="font-bold text-primary">Out of Credits</h4>
+                        <p className="text-sm text-primary/80">Invite friends to earn free credits instantly.</p>
+                    </div>
+                    <Link href="/referrals">
+                        <Button className="font-bold uppercase tracking-wider">Earn Credits</Button>
+                    </Link>
+                </div>
+            )}
 
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

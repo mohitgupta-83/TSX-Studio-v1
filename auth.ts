@@ -7,12 +7,22 @@ import { validateEnv } from "@/lib/env";
 // Validate env vars at runtime
 validateEnv();
 
+// Import it at top
+import { processNewUserReferralSetup } from "@/lib/referrals/referralService";
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
     adapter: PrismaAdapter(db),
     session: { strategy: "jwt" },
     trustHost: true,
     secret: process.env.AUTH_SECRET,
     ...authConfig,
+    events: {
+        async createUser({ user }) {
+            if (user.id && user.email) {
+                await processNewUserReferralSetup(user.id, user.email);
+            }
+        }
+    },
     callbacks: {
         ...authConfig.callbacks,
         async jwt({ token, user, account }) {
@@ -50,6 +60,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                                 amount: 3,
                             }
                         });
+
+                        // Referral processing
+                        await processNewUserReferralSetup(dbUser.id, user.email);
                     }
 
                     token.sub = dbUser.id;
