@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
         const randomSuffix = crypto.randomBytes(3).toString("hex");
         const uniqueSlug = `${baseSlug}-${randomSuffix}`;
 
-        const newTemplate = await db.template.create({
+        const newTemplate = (await db.template.create({
             data: {
                 name,
                 title: name,
@@ -36,8 +36,8 @@ export async function POST(req: NextRequest) {
                 tsxCode: tsxCode,
                 authorId: session.user.id,
                 status: "PENDING",
-            }
-        });
+            } as any
+        })) as any;
 
         return NextResponse.json({ success: true, slug: newTemplate.slug });
     } catch (error: any) {

@@ -86,6 +86,7 @@ model Project {
   workspaceId  String?
   name         String
   status       String           @default("Draft")
+  type         String           @default("NORMAL")
   resolution   String           @default("1080p")
   fps          Int              @default(30)
   createdAt    DateTime         @default(now())

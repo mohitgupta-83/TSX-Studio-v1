@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { addCredits } from "@/lib/credits/creditService";
 
-export async function POST(req: NextRequest, { params }: { params: { slug: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
     try {
         const session = await auth();
         if (!session?.user?.id) {
@@ -13,9 +13,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         const { slug } = await params;
 
         // Fetch the template
-        const template = await db.template.findUnique({
-            where: { slug }
-        });
+        const template = (await db.template.findUnique({
+            where: { slug } as any
+        })) as any;
 
         if (!template) {
             return NextResponse.json({ error: "Template not found" }, { status: 404 });
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
                     userId: userId,
                     status: "DRAFT",
                     type: "TEMPLATE_CLONE"
-                }
-            });
+                } as any
+            }) as any;
 
             // Create version
             await tx.projectVersion.create({
@@ -52,10 +52,10 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
 
             // Update template usage
             await tx.template.update({
-                where: { id: template.id },
+                where: { id: template.id } as any,
                 data: {
                     usesCount: { increment: 1 }
-                }
+                } as any
             });
 
             return newProject;

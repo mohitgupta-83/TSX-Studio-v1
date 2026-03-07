@@ -4,16 +4,16 @@ import { TemplateClient } from "./template-client";
 import { Metadata } from 'next';
 
 interface Props {
-    params: { slug: string };
-    searchParams: { [key: string]: string | string[] | undefined };
+    params: Promise<{ slug: string }>;
+    searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { slug } = await params;
-    const template = await db.template.findUnique({
-        where: { slug },
+    const template = (await db.template.findUnique({
+        where: { slug } as any,
         include: { author: { select: { name: true } } }
-    });
+    })) as any;
 
     if (!template) {
         return { title: 'Template Not Found' };
@@ -22,18 +22,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return {
         title: `${template.name || template.title} | TSX Studio`,
         description: template.description,
-        keywords: template.tags.split(",").map(t => t.trim()),
+        keywords: template.tags.split(",").map((t: string) => t.trim()),
     };
 }
 
 export default async function TemplatePage({ params, searchParams }: Props) {
     const { slug } = await params;
-    const action = await searchParams?.action;
+    const { action } = await searchParams;
 
-    const template = await db.template.findUnique({
-        where: { slug },
+    const template = (await db.template.findUnique({
+        where: { slug } as any,
         include: { author: { select: { id: true, name: true, image: true } } }
-    });
+    })) as any;
 
     if (!template || template.status !== "PUBLISHED") {
         // Allows previewing if author? We just strictly follow requirement: return 404 if not found
