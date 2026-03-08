@@ -96,7 +96,20 @@ export async function renderProject(options: RenderOptions): Promise<string> {
             registerRoot(RemotionRoot);
         `;
         await fs.writeFile(entryPath, entryContent);
-        await fs.writeFile(cssPath, `/* Tailwind placeholder */`);
+        const cssContent = `
+/* Premium Caption Typography Engine */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800;900&display=swap');
+
+html, body, #root, [data-remotion-wrapper] {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    margin: 0;
+    padding: 0;
+    background-color: black;
+}
+`;
+        await fs.writeFile(cssPath, cssContent);
 
         await log('Step 2: Bundling Code...');
         const bundled = await bundle({
@@ -147,10 +160,10 @@ export async function renderProject(options: RenderOptions): Promise<string> {
 
     } catch (error: any) {
         const errorStack = error.stack || error.message;
-        await log(`ERROR:\n${errorStack}`);
+        await log(`ERROR: \n${errorStack} `);
         console.error("Render failed:", error);
 
-        onLog(`Failed: ${error.message}`);
+        onLog(`Failed: ${error.message} `);
         if (options.jobId) await reportProgress(options.jobId, 0, "FAILED", undefined, undefined, undefined, error.message);
         throw error;
     }
