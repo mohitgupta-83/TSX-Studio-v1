@@ -63,7 +63,15 @@ export function ExportDialog({
     fps = 30,
     durationInFrames = 300,
 }: ExportDialogProps) {
-    const [open, setOpen] = useState(false);
+    const [dialogOpen, setDialogOpen] = useState(false);
+
+    // Listen to global open event (used by templates)
+    useEffect(() => {
+        const handler = () => setDialogOpen(true);
+        window.addEventListener("open-export-dialog", handler);
+        return () => window.removeEventListener("open-export-dialog", handler);
+    }, []);
+
     const [isRendering, setIsRendering] = useState(false);
     const [credits, setCredits] = useState<any>(null);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
@@ -82,10 +90,10 @@ export function ExportDialog({
     }, []);
 
     useEffect(() => {
-        if (open && isLoggedIn) {
+        if (dialogOpen && isLoggedIn) {
             fetchCredits();
         }
-    }, [open, isLoggedIn]);
+    }, [dialogOpen, isLoggedIn]);
 
     async function fetchCredits() {
         setIsLoadingCredits(true);
@@ -168,10 +176,12 @@ export function ExportDialog({
 
             // 3. Redirect to /exports
             setTimeout(() => {
-                setOpen(false);
+                setDialogOpen(false);
                 router.push("/exports");
             }, 800);
 
+            // Do NOT close dialog yet, keep showing rendering...
+            // setDialogOpen(false); 
         } catch (err: any) {
             toast.error("Render Failed", { description: err.message });
         } finally {
@@ -188,7 +198,7 @@ export function ExportDialog({
     }
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
                 <Button size="sm" className="gap-2 text-xs h-9 px-5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white border-0 font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">
                     <Rocket className="w-4 h-4" /> EXPORT VIDEO
@@ -304,9 +314,9 @@ export function ExportDialog({
                         <Button
                             variant="ghost"
                             className="flex-1 h-14 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-white/5 text-white/50 hover:text-white"
-                            onClick={() => setOpen(false)}
+                            onClick={() => setDialogOpen(false)}
                         >
-                            CANCEL
+                            Close
                         </Button>
                         <Button
                             className="flex-[1.5] h-14 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-black italic rounded-2xl shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50"

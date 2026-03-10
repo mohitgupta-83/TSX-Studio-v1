@@ -1,0 +1,4 @@
+﻿components/template-editor.tsx(7,26): error TS2307: Cannot find module '@/components/ui/textarea' or its corresponding type declarations.
+components/template-editor.tsx(8,24): error TS2307: Cannot find module '@/components/ui/slider' or its corresponding type declarations.
+components/template-editor.tsx(69,36): error TS7006: Parameter 'e' implicitly has an 'any' type.
+components/template-editor.tsx(112,45): error TS7006: Parameter 'vals' implicitly has an 'any' type.

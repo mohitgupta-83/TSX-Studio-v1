@@ -47,5 +47,13 @@ if (isDev) {
     require('tsx/cjs');
     require('./main.ts');
 } else {
-    require('./dist-main/main.js');
+    // Due to tsc outputting differently when importing outside rootDir
+    const mainPath1 = path.join(__dirname, 'dist-main', 'main.js');
+    const mainPath2 = path.join(__dirname, 'dist-main', 'desktop', 'main.js');
+
+    if (fs.existsSync(mainPath2)) {
+        require(mainPath2);
+    } else {
+        require(mainPath1);
+    }
 }
