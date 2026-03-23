@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 
-// This endpoint now only provides instructions for local transcription
+// This endpoint processes transcription via our ASR hybrid engine
 export async function POST(req: Request) {
     const session = await auth();
     if (!session?.user?.id) {
@@ -23,15 +23,42 @@ export async function POST(req: Request) {
             fileName: fileName || "unnamed_media",
             filePath: storageKey || "local_path",
             model: model || "base",
-            status: "LOCAL_READY",
+            status: "RUNNING", // set to running initially
         },
     });
 
-    return NextResponse.json({
-        id: job.id,
-        status: "LOCAL_READY",
-        message: "Transcription ready for local processing. Use 'tsx-studio transcribe'.",
-    });
+    try {
+        const { processAudioWithEngine } = await import("@/lib/asr-engine/router");
+        const jsonOutput = await processAudioWithEngine({
+            audioPath: storageKey, // assuming storageKey holds the absolute local path for now
+            // We interpret language through auto detect or model mapping internally
+        });
+
+        await db.transcriptionJob.update({
+            where: { id: job.id },
+            data: {
+                status: "DONE",
+                jsonOutput: JSON.stringify(jsonOutput),
+            },
+        });
+
+        return NextResponse.json({
+            id: job.id,
+            status: "DONE",
+            jsonOutput: jsonOutput
+        });
+
+    } catch (error: any) {
+        await db.transcriptionJob.update({
+            where: { id: job.id },
+            data: {
+                status: "FAILED",
+                errorMessage: error.message || "Failed during transcription",
+            },
+        });
+
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }
 
 export async function GET() {

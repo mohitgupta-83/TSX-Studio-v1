@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Filter, MoreVertical, Play, Clock, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
+import { GenerateFullVideoDialog } from "@/components/generate-full-video-dialog";
 import { Input } from "@/components/ui/input";
 import {
     Card,
@@ -128,7 +129,10 @@ export function DashboardClient({ projects: initialProjects, stats, userName, cr
                             </div>
                         </CardContent>
                     </Card>
-                    <CreateProjectDialog onSuccess={handleProjectCreated} />
+                    <div className="flex flex-col gap-2">
+                        <GenerateFullVideoDialog />
+                        <CreateProjectDialog onSuccess={handleProjectCreated} />
+                    </div>
                 </div>
             </div>
 

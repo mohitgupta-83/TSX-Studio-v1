@@ -7,6 +7,7 @@ const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
 const render_1 = require("./engine/render");
 const system_check_1 = require("./engine/system-check");
+const router_1 = require("../lib/asr-engine/router");
 const registry_1 = require("../lib/template-system/registry");
 const fs_extra_1 = __importDefault(require("fs-extra"));
 let mainWindow = null;
@@ -234,12 +235,27 @@ electron_1.ipcMain.handle('install-whisper-engine', async (event) => {
         });
     };
     try {
-        await runCommand('pip install -U openai-whisper');
+        await runCommand('pip install -U openai-whisper faster-whisper');
         try {
             await runCommand('winget install ffmpeg --accept-source-agreements');
         }
         catch (e) { }
         return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+electron_1.ipcMain.handle('transcribe-media', async (event, options) => {
+    try {
+        const jsonOutput = await (0, router_1.processAudioWithEngine)({
+            audioPath: options.filePath,
+            languageMode: options.language || 'auto',
+            model: options.model || 'base',
+            onProgress: (p) => event.sender.send('transcribe-progress', p),
+            onLog: (l) => event.sender.send('transcribe-log', l),
+        });
+        return { success: true, transcription: JSON.stringify(jsonOutput) };
     }
     catch (error) {
         return { success: false, error: error.message };

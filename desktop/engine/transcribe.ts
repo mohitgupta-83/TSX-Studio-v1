@@ -128,8 +128,8 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<strin
                             text: s.text ? s.text.trim() : ""
                         }));
 
-                        // 2. STRICT SPLITTING: Force segments to be 3-5 seconds
-                        const MAX_DURATION = 5.0;
+                        // 2. STRICT SPLITTING: Force segments to be 2-3 seconds
+                        const MAX_DURATION = 2.5;
                         const finalSegments: any[] = [];
 
                         // HINDI TECH AUTOCORRECT DICTIONARY
@@ -165,7 +165,7 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<strin
                             const duration = seg.end - seg.start;
                             if (duration > MAX_DURATION) {
                                 const words = seg.text.split(' ');
-                                const numChunks = Math.ceil(duration / 4.0);
+                                const numChunks = Math.ceil(duration / 2.0);
                                 const wordsPerChunk = Math.ceil(words.length / numChunks);
                                 for (let i = 0; i < numChunks; i++) {
                                     const chunkWords = words.slice(i * wordsPerChunk, (i + 1) * wordsPerChunk);
@@ -183,10 +183,28 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<strin
                             }
                         });
 
+                        // Generate SRT + TXT
+                        const formatSrtTime = (seconds: number) => {
+                            const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
+                            const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+                            const ss = String(Math.floor(seconds % 60)).padStart(2, '0');
+                            const ms = String(Math.floor((seconds * 1000) % 1000)).padStart(3, '0');
+                            return `${hh}:${mm}:${ss},${ms}`;
+                        };
+                        
+                        let srtOutput = "";
+                        let txtOutput = "";
+                        finalSegments.forEach((s: any, i: number) => {
+                            srtOutput += `${i + 1}\n${formatSrtTime(s.start)} --> ${formatSrtTime(s.end)}\n${s.text}\n\n`;
+                            txtOutput += `${s.text}\n`;
+                        });
+
                         const data = {
                             language: parsed.language || "en",
                             language_probability: langProb,
                             duration: duration,
+                            srt: srtOutput.trim(),
+                            txt: txtOutput.trim(),
                             segments: finalSegments.map((s: any, index: number) => ({
                                 id: index + 1,
                                 start: s.start,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateCaptionTSX } from "@/lib/caption-engine/generator";
+import { generatePremiumTSX } from "@/lib/premium-captions/renderer";
 import { auth } from "@/auth";
 import { deductCredits } from "@/lib/credits/creditService";
 import { processUserActivation } from "@/lib/referrals/referralService";
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: e.message }, { status: 403 });
         }
 
-        const tsx = generateCaptionTSX(json, style);
+        const tsx = generatePremiumTSX(json, style);
 
         // Process referral reward (only happens once per user correctly handled inside service)
         await processUserActivation(session.user.id);

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+/* Re-triggering Tailwind 4 rebuild after purge */
 
 @plugin "tailwindcss-animate";
 

@@ -1,0 +1,1 @@
+export const clampProgress = "const progress = Math.max(0, Math.min(1, (frame - captionStartFrame) / Math.max(1, captionEndFrame - captionStartFrame)));\nlet currentWordIndex = Math.floor(progress * words.length);\ncurrentWordIndex = Math.max(0, Math.min(words.length - 1, currentWordIndex));";

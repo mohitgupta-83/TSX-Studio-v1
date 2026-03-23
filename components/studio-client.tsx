@@ -22,7 +22,8 @@ import {
     Monitor,
     Square,
     Sparkles,
-    Shield
+    Shield,
+    Mic
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -159,9 +160,9 @@ export function StudioClient({
         }
 
         return {
-            width: widthDeclMatch ? parseInt(widthDeclMatch[1]) : 1080,
-            height: heightDeclMatch ? parseInt(heightDeclMatch[1]) : 1920,
-            fps: parsedFps,
+            width: 1080,
+            height: 1920,
+            fps: 30,
             durationInFrames
         };
     };
@@ -376,9 +377,9 @@ export function StudioClient({
                                         key={`${dimensions.width}-${dimensions.height}-${dimensions.durationInFrames}`}
                                         code={validatedCode}
                                         isValid={validationResult.valid}
-                                        width={dimensions.width}
-                                        height={dimensions.height}
-                                        fps={dimensions.fps}
+                                        width={1080}
+                                        height={1920}
+                                        fps={30}
                                         durationInFrames={dimensions.durationInFrames}
                                     />
                                 </div>
@@ -411,8 +412,8 @@ export function StudioClient({
                     </div>
                 </div>
 
-                <div className="w-[450px] border-l border-white/5 flex flex-col bg-[#0A0A0B]">
-                    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+                <div className="w-[450px] border-l border-white/5 flex flex-col bg-[#0A0A0B] overflow-hidden">
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
                         <TabsList className="w-full justify-start rounded-none h-10 bg-transparent border-b border-white/5 px-4 pt-1">
                             <TabsTrigger value="editor" className="text-[10px] uppercase font-bold tracking-wider data-[state=active]:bg-white/5 gap-2"><Code2 className="w-3 h-3" /> Editor</TabsTrigger>
                             <TabsTrigger value="presets" className="text-[10px] uppercase font-bold tracking-wider data-[state=active]:bg-white/5 gap-2"><Sparkles className="w-3 h-3" /> Claude Presets</TabsTrigger>

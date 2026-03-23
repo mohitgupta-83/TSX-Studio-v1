@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'path';
 import { renderProject } from './engine/render';
 import { checkSystem } from './engine/system-check';
-import { transcribeAudio } from './engine/transcribe';
+import { processAudioWithEngine } from '../lib/asr-engine/router';
 import { getTemplateById } from '../lib/template-system/registry';
 import fs from 'fs-extra';
 
@@ -259,9 +259,25 @@ ipcMain.handle('install-whisper-engine', async (event) => {
     };
 
     try {
-        await runCommand('pip install -U openai-whisper');
+        await runCommand('pip install -U openai-whisper faster-whisper');
         try { await runCommand('winget install ffmpeg --accept-source-agreements'); } catch (e) { }
         return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('transcribe-media', async (event, options) => {
+    try {
+        const jsonOutput = await processAudioWithEngine({
+            audioPath: options.filePath,
+            languageMode: options.language || 'auto',
+            model: options.model || 'base',
+            onProgress: (p: number) => event.sender.send('transcribe-progress', p),
+            onLog: (l: string) => event.sender.send('transcribe-log', l),
+        });
+        
+        return { success: true, transcription: JSON.stringify(jsonOutput) };
     } catch (error: any) {
         return { success: false, error: error.message };
     }

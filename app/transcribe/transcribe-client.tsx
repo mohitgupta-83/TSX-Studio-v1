@@ -67,6 +67,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [previewJson, setPreviewJson] = useState<string | null>(null);
+    const [previewFormat, setPreviewFormat] = useState<"json" | "srt" | "txt">("json");
     const [isDragOver, setIsDragOver] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState(CLAUDE_PRESETS[0].id);
     const [lastLog, setLastLog] = useState<string>("Initializing...");
@@ -242,24 +243,63 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     };
 
     const handleDownload = async (jobId: string) => {
-        // If local job or downloaded job, we might need a different logic
-        // But for UI demo we just download the existing JSON in state
         if (previewJson) {
-            const blob = new Blob([previewJson], { type: "application/json" });
+            const parsed = JSON.parse(previewJson);
+            
+            // Clean JSON by removing string attributes when downloading as JSON
+            const cleanObj = { ...parsed };
+            delete cleanObj.srt;
+            delete cleanObj.txt;
+
+            let content = JSON.stringify(cleanObj, null, 2);
+            let type = "application/json";
+            let ext = "json";
+            
+            if (previewFormat === "srt" && parsed.srt) {
+                content = parsed.srt;
+                type = "text/plain";
+                ext = "srt";
+            } else if (previewFormat === "txt" && parsed.txt) {
+                content = parsed.txt;
+                type = "text/plain";
+                ext = "txt";
+            } else if (previewFormat !== "json") {
+                toast.error(`Format ${previewFormat} not generated for this file unfortunately.`);
+                return;
+            }
+
+            const blob = new Blob([content], { type });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = "transcript.json";
+            a.download = `transcript.${ext}`;
             a.click();
         } else {
             toast.error("No output available to download");
         }
     };
 
-    const handleCopyJson = () => {
+    const handleCopyContent = () => {
         if (previewJson) {
-            navigator.clipboard.writeText(previewJson);
-            toast.success("JSON copied to clipboard!");
+            const parsed = JSON.parse(previewJson);
+            
+            const cleanObj = { ...parsed };
+            delete cleanObj.srt;
+            delete cleanObj.txt;
+            
+            let content = JSON.stringify(cleanObj, null, 2);
+            
+            if (previewFormat === "srt" && parsed.srt) {
+                content = parsed.srt;
+            } else if (previewFormat === "txt" && parsed.txt) {
+                content = parsed.txt;
+            } else if (previewFormat !== "json") {
+                toast.error(`Format ${previewFormat} not generated for this file unfortunately.`);
+                return;
+            }
+
+            navigator.clipboard.writeText(content);
+            toast.success(`${previewFormat.toUpperCase()} copied to clipboard!`);
         }
     };
 
@@ -547,11 +587,9 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                     <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
                                         <SelectItem value="auto">Auto Detect</SelectItem>
                                         <SelectItem value="en">English</SelectItem>
-                                        <SelectItem value="hi">Hindi (Pure)</SelectItem>
-                                        <SelectItem value="hinglish">Hinglish (Hindi + English)</SelectItem>
-                                        <SelectItem value="ur">Urdu</SelectItem>
-                                        <SelectItem value="es">Spanish</SelectItem>
-                                        <SelectItem value="fr">French</SelectItem>
+                                        <SelectItem value="hi">Hindi</SelectItem>
+                                        <SelectItem value="hinglish">Hinglish</SelectItem>
+                                        <SelectItem value="ta">Other Indian Languages</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 {selectedLanguage === "hinglish" && (
@@ -712,19 +750,36 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                         {/* JSON Preview */}
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
-                                <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                    JSON Output
-                                </h3>
+                                <div className="flex bg-white/5 rounded-lg border border-white/10 p-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setPreviewFormat("json")}
+                                        className={`h-6 text-[9px] uppercase font-bold px-3 tracking-widest ${previewFormat === "json" ? "bg-white/10" : ""}`}
+                                    >JSON</Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setPreviewFormat("srt")}
+                                        className={`h-6 text-[9px] uppercase font-bold px-3 tracking-widest ${previewFormat === "srt" ? "bg-white/10" : ""}`}
+                                    >SRT</Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setPreviewFormat("txt")}
+                                        className={`h-6 text-[9px] uppercase font-bold px-3 tracking-widest ${previewFormat === "txt" ? "bg-white/10" : ""}`}
+                                    >TXT</Button>
+                                </div>
                                 {previewJson && (
                                     <div className="flex gap-2">
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={handleCopyJson}
+                                            onClick={handleCopyContent}
                                             className="h-8 text-xs"
                                         >
                                             <Copy className="w-3 h-3 mr-1" />
-                                            Copy JSON
+                                            Copy {previewFormat.toUpperCase()}
                                         </Button>
 
                                         <div className="flex items-center gap-1 bg-white/5 rounded-lg border border-white/10 p-1">
@@ -756,7 +811,17 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                             <div className="relative rounded-2xl bg-[#0A0A0B] border border-white/5 overflow-hidden min-h-[400px]">
                                 {previewJson ? (
                                     <pre className="p-6 text-sm font-mono text-green-400/80 overflow-auto max-h-[500px]">
-                                        {JSON.stringify(JSON.parse(previewJson), null, 2)}
+                                        {previewFormat === "json" 
+                                            ? (() => {
+                                                const cl = JSON.parse(previewJson);
+                                                delete cl.srt;
+                                                delete cl.txt;
+                                                return JSON.stringify(cl, null, 2);
+                                              })()
+                                            : previewFormat === "srt" 
+                                                ? JSON.parse(previewJson).srt || "SRT generated data missing for this legacy transcription."
+                                                : JSON.parse(previewJson).txt || "TXT generated data missing for this legacy transcription."
+                                        }
                                     </pre>
                                 ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
