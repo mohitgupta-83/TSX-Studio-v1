@@ -126,19 +126,18 @@ export default function LoginPage() {
                                 </Button>
 
                                 {/* DEV LOGIN BUTTON */}
-                                {process.env.NODE_ENV === 'development' && (
-                                    <Button
-                                        onClick={() => {
-                                            setIsLoading(true);
-                                            signIn("credentials", { email: "dev@tsx.studio", callbackUrl: "/dashboard" });
-                                        }}
-                                        disabled={isLoading}
-                                        className="w-full h-12 bg-white/[0.03] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.06] rounded-full font-bold text-sm transition-all duration-300 active:scale-[0.98] flex items-center justify-center text-white/80 hover:text-white"
-                                    >
-                                        <Terminal className="w-4 h-4 mr-2 text-purple-400" />
-                                        <span>One-Click Dev Login</span>
-                                    </Button>
-                                )}
+                                {/* TESTING PHASE BYPASS - ONE CLICK HANDSHAKE */}
+                                <Button
+                                    onClick={() => {
+                                        setIsLoading(true);
+                                        signIn("credentials", { email: "dev@tsx.studio", callbackUrl: "/dashboard" });
+                                    }}
+                                    disabled={isLoading}
+                                    className="w-full h-12 bg-purple-500/10 border border-purple-500/20 hover:border-purple-500/50 hover:bg-purple-500/20 rounded-full font-bold text-sm transition-all duration-300 active:scale-[0.98] flex items-center justify-center text-purple-400 hover:text-purple-300"
+                                >
+                                    <Terminal className="w-4 h-4 mr-2" />
+                                    <span>One-Click Dev Login (Testing Phase)</span>
+                                </Button>
 
                                 <p className="text-[9px] text-center text-muted-foreground font-medium uppercase tracking-widest opacity-40">
                                     Encrypted Handshake Enabled
