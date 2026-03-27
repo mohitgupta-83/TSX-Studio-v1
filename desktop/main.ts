@@ -83,10 +83,7 @@ if (!gotLock) {
 }
 
 function createWindow() {
-    // app.getAppPath() always returns the desktop/ root folder (where package.json is),
-    // regardless of whether we're packaged, running via tsx, or compiled to dist-main/.
-    // __dirname is unreliable here because tsc outputs to dist-main/desktop/.
-    const rootPath = app.isPackaged ? path.join(process.resourcesPath, 'app') : app.getAppPath();
+    const rootPath = app.isPackaged ? path.join(__dirname, '..') : __dirname;
 
     mainWindow = new BrowserWindow({
         width: 1400,

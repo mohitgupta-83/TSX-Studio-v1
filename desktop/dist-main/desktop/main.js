@@ -82,7 +82,10 @@ else {
     });
 }
 function createWindow() {
-    const rootPath = electron_1.app.isPackaged ? path_1.default.join(__dirname, '..') : __dirname;
+    // app.getAppPath() always returns the desktop/ root folder (where package.json is),
+    // regardless of whether we're packaged, running via tsx, or compiled to dist-main/.
+    // __dirname is unreliable here because tsc outputs to dist-main/desktop/.
+    const rootPath = electron_1.app.isPackaged ? path_1.default.join(process.resourcesPath, 'app') : electron_1.app.getAppPath();
     mainWindow = new electron_1.BrowserWindow({
         width: 1400,
         height: 900,
