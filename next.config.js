@@ -5,7 +5,7 @@ const nextConfig = {
     return config;
   },
   serverExternalPackages: ["@prisma/client", "@remotion/bundler", "@remotion/renderer", "ffmpeg-static"],
-  output: "standalone",
+  output: "export",
   eslint: {
     ignoreDuringBuilds: true,
   },

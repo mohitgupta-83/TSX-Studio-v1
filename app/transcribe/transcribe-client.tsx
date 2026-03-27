@@ -66,8 +66,8 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     const [selectedScript, setSelectedScript] = useState("Auto");
     const [isUploading, setIsUploading] = useState(false);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
-    const [previewJson, setPreviewJson] = useState<string | null>(null);
-    const [previewFormat, setPreviewFormat] = useState<"json" | "srt" | "txt">("json");
+    const [transcript, setTranscript] = useState<any>({ json: null, srt: "", txt: "" });
+    const [activeTab, setActiveTab] = useState("json");
     const [isDragOver, setIsDragOver] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState(CLAUDE_PRESETS[0].id);
     const [lastLog, setLastLog] = useState<string>("Initializing...");
@@ -183,10 +183,15 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 language: selectedLanguage
             });
 
-            console.log("Transcription result:", result);
+            console.log("TRANSCRIBE RESPONSE:", result);
 
             if (result.success) {
                 const parsed = JSON.parse(result.transcription);
+                console.log("PARSED TRANSCRIPTION KEYS:", Object.keys(parsed));
+                console.log("JSON segments:", parsed.segments?.length || 0);
+                console.log("SRT length:", (parsed.srt || "").length);
+                console.log("TXT length:", (parsed.txt || "").length);
+                
                 const newJob: TranscriptionJob = {
                     id: Math.random().toString(36).substr(2, 9),
                     status: "DONE",
@@ -205,7 +210,21 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                     localStorage.setItem("tsx-studio-jobs", JSON.stringify(updated));
                     return updated;
                 });
-                setPreviewJson(result.transcription);
+                
+                // Separate srt/txt from the clean JSON object
+                const cleanJsonData = { ...parsed };
+                delete cleanJsonData.srt;
+                delete cleanJsonData.txt;
+
+                setTranscript({
+                    json: cleanJsonData,
+                    srt: parsed.srt || "",
+                    txt: parsed.txt || ""
+                });
+                setActiveTab("json");
+                
+                console.log("TRANSCRIPT STATE SET - JSON:", !!parsed, "SRT:", (parsed.srt || "").length, "TXT:", (parsed.txt || "").length);
+                
                 toast.success("Transcription Complete!");
                 setSelectedFile(null);
                 setActiveJobId(null); // Fix: Clear loading state on success
@@ -243,28 +262,24 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     };
 
     const handleDownload = async (jobId: string) => {
-        if (previewJson) {
-            const parsed = JSON.parse(previewJson);
+        if (transcript) {
+            let content = "";
+            let type = "text/plain";
+            let ext = "txt";
             
-            // Clean JSON by removing string attributes when downloading as JSON
-            const cleanObj = { ...parsed };
-            delete cleanObj.srt;
-            delete cleanObj.txt;
-
-            let content = JSON.stringify(cleanObj, null, 2);
-            let type = "application/json";
-            let ext = "json";
-            
-            if (previewFormat === "srt" && parsed.srt) {
-                content = parsed.srt;
-                type = "text/plain";
+            if (activeTab === "json") {
+                content = JSON.stringify(transcript.json, null, 2);
+                type = "application/json";
+                ext = "json";
+            } else if (activeTab === "srt") {
+                content = transcript.srt;
                 ext = "srt";
-            } else if (previewFormat === "txt" && parsed.txt) {
-                content = parsed.txt;
-                type = "text/plain";
-                ext = "txt";
-            } else if (previewFormat !== "json") {
-                toast.error(`Format ${previewFormat} not generated for this file unfortunately.`);
+            } else if (activeTab === "txt") {
+                content = transcript.txt;
+            }
+
+            if (!content) {
+                toast.error(`Format ${activeTab} not generated for this file unfortunately.`);
                 return;
             }
 
@@ -280,34 +295,31 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     };
 
     const handleCopyContent = () => {
-        if (previewJson) {
-            const parsed = JSON.parse(previewJson);
-            
-            const cleanObj = { ...parsed };
-            delete cleanObj.srt;
-            delete cleanObj.txt;
-            
-            let content = JSON.stringify(cleanObj, null, 2);
-            
-            if (previewFormat === "srt" && parsed.srt) {
-                content = parsed.srt;
-            } else if (previewFormat === "txt" && parsed.txt) {
-                content = parsed.txt;
-            } else if (previewFormat !== "json") {
-                toast.error(`Format ${previewFormat} not generated for this file unfortunately.`);
+        if (transcript) {
+            let content = "";
+            if (activeTab === "json") {
+                content = JSON.stringify(transcript.json, null, 2);
+            } else if (activeTab === "srt") {
+                content = transcript.srt;
+            } else if (activeTab === "txt") {
+                content = transcript.txt;
+            }
+
+            if (!content) {
+                toast.error(`Format ${activeTab} not generated for this file unfortunately.`);
                 return;
             }
 
             navigator.clipboard.writeText(content);
-            toast.success(`${previewFormat.toUpperCase()} copied to clipboard!`);
+            toast.success(`${activeTab.toUpperCase()} copied to clipboard!`);
         }
     };
 
     const handleCopyClaudePrompt = () => {
-        if (previewJson) {
-            const job = jobs.find(j => !!previewJson); // Simple heuristic
+        if (transcript?.json) {
+            const job = jobs[0]; // Simple heuristic
             const duration = job?.durationSeconds || 30;
-            const prompt = getClaudePrompt(selectedPreset, previewJson, duration);
+            const prompt = getClaudePrompt(selectedPreset, JSON.stringify(transcript.json), duration);
             navigator.clipboard.writeText(prompt);
             toast.success("Claude prompt copied ✅", {
                 description: "Paste this into Claude to get your TSX code."
@@ -321,12 +333,12 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
             localStorage.setItem("tsx-studio-jobs", JSON.stringify(updated));
             return updated;
         });
-        if (previewJson) setPreviewJson(null);
+        if (transcript) setTranscript(null);
         toast.success("Job removed from history");
     };
 
     const handleGenerateTSX = async () => {
-        if (!previewJson) return;
+        if (!transcript?.json) return;
 
         setIsGenerating(true);
         try {
@@ -335,7 +347,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    json: JSON.parse(previewJson),
+                    json: transcript.json,
                     style: captionStyle,
                 }),
             });
@@ -423,15 +435,17 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                     </p>
                 </div>
                 {isElectron && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => router.refresh()}
-                        className="border-white/10"
-                    >
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Refresh
-                    </Button>
+                    <div className="flex items-center">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => router.refresh()}
+                            className="border-white/10"
+                        >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Refresh
+                        </Button>
+                    </div>
                 )}
             </div>
 
@@ -669,7 +683,23 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                                             variant="ghost"
                                                             size="icon"
                                                             className="h-8 w-8 opacity-0 group-hover:opacity-100"
-                                                            onClick={() => setPreviewJson(job.transcriptionOutput || JSON.stringify({ error: "No content saved for this job" }))}
+                                                            onClick={() => {
+                                                                try {
+                                                                    const parsedResult = JSON.parse(job.transcriptionOutput || "{}");
+                                                                    if (parsedResult.error) {
+                                                                        toast.error("No content saved for this job");
+                                                                        return;
+                                                                    }
+                                                                    setTranscript({
+                                                                        json: parsedResult,
+                                                                        srt: parsedResult.srt || "",
+                                                                        txt: parsedResult.txt || ""
+                                                                    });
+                                                                    setActiveTab("json");
+                                                                } catch(e) { 
+                                                                    toast.error("Could not parse legacy job data");
+                                                                }
+                                                            }}
                                                         >
                                                             <Play className="w-4 h-4" />
                                                         </Button>
@@ -747,30 +777,37 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                             </div>
                         )}
 
-                        {/* JSON Preview */}
+                        {/* Result Section */}
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <div className="flex bg-white/5 rounded-lg border border-white/10 p-1">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setPreviewFormat("json")}
-                                        className={`h-6 text-[9px] uppercase font-bold px-3 tracking-widest ${previewFormat === "json" ? "bg-white/10" : ""}`}
-                                    >JSON</Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setPreviewFormat("srt")}
-                                        className={`h-6 text-[9px] uppercase font-bold px-3 tracking-widest ${previewFormat === "srt" ? "bg-white/10" : ""}`}
-                                    >SRT</Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setPreviewFormat("txt")}
-                                        className={`h-6 text-[9px] uppercase font-bold px-3 tracking-widest ${previewFormat === "txt" ? "bg-white/10" : ""}`}
-                                    >TXT</Button>
+                            {/* Transcription Format Tabs */}
+                            <div className="flex items-center justify-between pb-2 mb-4 border-b border-white/5">
+                                <div className="flex bg-white/5 p-1 rounded-xl border border-white/5 space-x-1">
+                                    <button
+                                        onClick={() => setActiveTab("json")}
+                                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                                            activeTab === "json" ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white/60 hover:bg-white/5"
+                                        }`}
+                                    >
+                                        JSON
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab("srt")}
+                                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                                            activeTab === "srt" ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white/60 hover:bg-white/5"
+                                        }`}
+                                    >
+                                        SRT
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab("txt")}
+                                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                                            activeTab === "txt" ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white/60 hover:bg-white/5"
+                                        }`}
+                                    >
+                                        TXT
+                                    </button>
                                 </div>
-                                {previewJson && (
+                                {transcript && (
                                     <div className="flex gap-2">
                                         <Button
                                             variant="ghost"
@@ -779,134 +816,52 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                             className="h-8 text-xs"
                                         >
                                             <Copy className="w-3 h-3 mr-1" />
-                                            Copy {previewFormat.toUpperCase()}
+                                            Copy {activeTab.toUpperCase()}
                                         </Button>
-
-                                        <div className="flex items-center gap-1 bg-white/5 rounded-lg border border-white/10 p-1">
-                                            <Select value={selectedPreset} onValueChange={setSelectedPreset}>
-                                                <SelectTrigger className="h-6 text-[9px] bg-transparent border-none shadow-none w-28 uppercase font-bold tracking-widest">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
-                                                    {CLAUDE_PRESETS.map(p => (
-                                                        <SelectItem key={p.id} value={p.id} className="text-[10px] uppercase font-bold">{p.name}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={handleCopyClaudePrompt}
-                                                className="h-6 text-[9px] text-primary uppercase font-bold tracking-widest hover:bg-primary/10"
-                                            >
-                                                <Sparkles className="w-3 h-3 mr-1" />
-                                                Copy Prompt
-                                            </Button>
-                                        </div>
                                     </div>
                                 )}
                             </div>
 
                             <div className="relative rounded-2xl bg-[#0A0A0B] border border-white/5 overflow-hidden min-h-[400px]">
-                                {previewJson ? (
-                                    <pre className="p-6 text-sm font-mono text-green-400/80 overflow-auto max-h-[500px]">
-                                        {previewFormat === "json" 
-                                            ? (() => {
-                                                const cl = JSON.parse(previewJson);
-                                                delete cl.srt;
-                                                delete cl.txt;
-                                                return JSON.stringify(cl, null, 2);
-                                              })()
-                                            : previewFormat === "srt" 
-                                                ? JSON.parse(previewJson).srt || "SRT generated data missing for this legacy transcription."
-                                                : JSON.parse(previewJson).txt || "TXT generated data missing for this legacy transcription."
-                                        }
-                                    </pre>
+                                {transcript ? (
+                                    <div className={`p-6 text-sm font-mono text-green-400/80 overflow-auto max-h-[500px]`}>
+                                        {activeTab === "json" && (
+                                            <pre>{JSON.stringify(transcript.json, null, 2)}</pre>
+                                        )}
+
+                                        {activeTab === "srt" && (
+                                            <pre style={{ whiteSpace: "pre-wrap" }}>
+                                                {transcript.srt || "No SRT data"}
+                                            </pre>
+                                        )}
+
+                                        {activeTab === "txt" && (
+                                          <pre style={{ whiteSpace: "pre-wrap" }}>
+                                            {transcript.txt || "No TXT data"}
+                                          </pre>
+                                        )}
+                                    </div>
                                 ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
                                         <div className="text-center">
                                             <FileJson2 className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                                            <p className="text-sm">Upload and transcribe a file to see the JSON output</p>
+                                            <p className="text-sm">No transcription yet</p>
                                         </div>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        {/* Generate TSX Panel */}
-                        {previewJson && (
-                            <div className="space-y-4 pt-4 border-t border-white/10">
-                                <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                    Generate Captions
-                                </h3>
-                                <div className="flex gap-4">
-                                    <Select value={captionStyle} onValueChange={setCaptionStyle}>
-                                        <SelectTrigger className="h-12 bg-card/50 border-white/10 flex-1 uppercase text-xs tracking-widest font-bold">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
-                                            <SelectItem value="clean">Clean Subtitles</SelectItem>
-                                            <SelectItem value="tiktok">TikTok Viral</SelectItem>
-                                            <SelectItem value="neon">Neon Glow</SelectItem>
-                                            <SelectItem value="mrbeast">MrBeast Style</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-
-                                    {!generatedProjectId ? (
-                                        <Button
-                                            onClick={handleGenerateTSX}
-                                            disabled={isGenerating}
-                                            className="h-12 flex-1 rounded-xl font-black italic uppercase text-xs tracking-widest shadow-lg shadow-primary/20 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/50"
-                                        >
-                                            {isGenerating ? (
-                                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating</>
-                                            ) : (
-                                                <><Sparkles className="w-4 h-4 mr-2" /> Generate TSX</>
-                                            )}
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            onClick={() => router.push(`/studio/${generatedProjectId}`)}
-                                            className="h-12 flex-1 rounded-xl font-black italic uppercase text-xs tracking-widest shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground"
-                                        >
-                                            Edit Animation
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Action Buttons */}
-                        {previewJson && (
-                            <div className="flex gap-4">
+                        {/* Download Button */}
+                        {transcript && (
+                            <div className="flex gap-3">
                                 <Button
                                     onClick={() => handleDownload("current")}
-                                    className="flex-1 h-12 rounded-xl font-black italic uppercase text-xs tracking-widest"
+                                    className="flex-1 h-12 rounded-xl font-black italic text-xs tracking-widest lowercase"
                                 >
                                     <Download className="w-4 h-4 mr-2" />
-                                    Download JSON
+                                    download.{activeTab}
                                 </Button>
-                                <div className="flex items-center gap-1 bg-white/5 rounded-xl border border-white/10 p-1 flex-1">
-                                    <Select value={selectedPreset} onValueChange={setSelectedPreset}>
-                                        <SelectTrigger className="h-10 text-[10px] bg-transparent border-none shadow-none flex-1 uppercase font-bold tracking-widest">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
-                                            {CLAUDE_PRESETS.map(p => (
-                                                <SelectItem key={p.id} value={p.id} className="text-[10px] uppercase font-bold">{p.name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <Button
-                                        variant="outline"
-                                        onClick={handleCopyClaudePrompt}
-                                        className="h-10 px-6 rounded-lg font-black italic uppercase text-[10px] tracking-widest border-primary/20 text-primary hover:bg-primary/10"
-                                    >
-                                        <Sparkles className="w-4 h-4 mr-2" />
-                                        Copy Claude Prompt
-                                    </Button>
-                                </div>
                             </div>
                         )}
                     </div>

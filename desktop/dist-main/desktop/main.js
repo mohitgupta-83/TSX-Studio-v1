@@ -100,15 +100,40 @@ function createWindow() {
             webSecurity: false
         },
     });
-    if (isDev) {
-        mainWindow.loadURL('http://localhost:5173');
-    }
-    else {
-        const prodUrl = 'https://tsx-studio-v2.vercel.app';
-        mainWindow.loadURL(prodUrl).catch(() => {
-            mainWindow?.loadFile(path_1.default.join(rootPath, 'dist-renderer', 'index.html'));
-        });
-    }
+    // Load Management Logic: Prefer Root Server -> Local Bundle -> Cloud Fallback
+    const tryUrl = async (url) => {
+        try {
+            await mainWindow?.loadURL(url);
+            return true;
+        }
+        catch (e) {
+            return false;
+        }
+    };
+    const loadApp = async () => {
+        // 1. Try Next.js root server (Image 1 Style - Sync Capable)
+        const success3000 = await tryUrl("http://localhost:3000");
+        if (success3000)
+            return;
+        // 2. Try Vite dev server (During Development)
+        if (process.env.NODE_ENV === "development") {
+            const success5173 = await tryUrl("http://localhost:5173");
+            if (success5173)
+                return;
+        }
+        // 3. Load Local Static Bundle (Image 2 Redesign - Standalone Capable)
+        const localPath = path_1.default.join(rootPath, "dist-renderer/index.html");
+        try {
+            await mainWindow?.loadFile(localPath);
+            console.log("Loaded local bundle from:", localPath);
+        }
+        catch (e) {
+            console.error("Local bundle failed, falling back to cloud", e);
+            // 4. Absolute Fallback to Cloud Production
+            mainWindow?.loadURL("https://tsx-studio-v2.vercel.app");
+        }
+    };
+    loadApp();
     mainWindow.once('ready-to-show', () => {
         mainWindow?.show();
         // Check if the app was literally opened by clicking a link
@@ -123,6 +148,94 @@ function createWindow() {
             mainWindow?.webContents.closeDevTools();
         });
     }
+    // Surgical DOM patch for the Vercel UI
+    // Injects the fully functional SRT and TXT features natively onto the Vercel dashboard at runtime!
+    mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow?.webContents.executeJavaScript(`
+            if (!window._tsxStringifyPatched) {
+                window._tsxLatestTranscript = null;
+
+                const originalParse = JSON.parse;
+                JSON.parse = function(text, reviver) {
+                    const result = originalParse.call(JSON, text, reviver);
+
+                    // Capture transcription data when it returns from Electron IPC
+                    if (result && typeof result === 'object' && result.json && result.srt) {
+                        window._tsxLatestTranscript = result;
+                        console.log("[TSX] Captured transcript:", result);
+                        
+                        // Force a tab refresh if UI is already open
+                        if (window.showTSX) window.showTSX('json');
+                    }
+
+                    return result;
+                };
+
+                function injectTabs() {
+                    // Look for the transcription result container
+                    let container = document.querySelector('[class*="json"]');
+                    if (!container) {
+                        const allNodes = Array.from(document.querySelectorAll('div, span, p'));
+                        const label = allNodes.find(n => (n.textContent||'').trim() === 'JSON OUTPUT');
+                        if (label && label.parentElement) container = label.parentElement;
+                    }
+
+                    if (!container) return;
+                    if (document.getElementById("tsx-tabs-header")) return;
+
+                    const tabsHeader = document.createElement("div");
+                    tabsHeader.id = "tsx-tabs-header";
+                    tabsHeader.style.display = "flex";
+                    tabsHeader.style.gap = "10px";
+                    tabsHeader.style.marginBottom = "15px";
+                    tabsHeader.style.marginTop = "10px";
+                    
+                    const btnStyle = "background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;";
+                    
+                    tabsHeader.innerHTML = \`
+                        <button style="\${btnStyle}" onclick="showTSX('json')">JSON</button>
+                        <button style="\${btnStyle}" onclick="showTSX('srt')">SRT</button>
+                        <button style="\${btnStyle}" onclick="showTSX('txt')">TXT</button>
+                    \`;
+
+                    const outputArea = document.createElement("pre");
+                    outputArea.id = "tsx-output-display";
+                    outputArea.style.background = "#09090b";
+                    outputArea.style.border = "1px solid rgba(255,255,255,0.1)";
+                    outputArea.style.borderRadius = "12px";
+                    outputArea.style.padding = "20px";
+                    outputArea.style.color = "#4ade80";
+                    outputArea.style.fontSize = "13px";
+                    outputArea.style.fontFamily = "monospace";
+                    outputArea.style.maxHeight = "400px";
+                    outputArea.style.overflow = "auto";
+                    outputArea.style.whiteSpace = "pre-wrap";
+                    outputArea.textContent = "Waiting for transcription...";
+
+                    container.appendChild(tabsHeader);
+                    container.appendChild(outputArea);
+
+                    window.showTSX = function(type) {
+                        const data = window._tsxLatestTranscript;
+                        const display = document.getElementById("tsx-output-display");
+                        if (!display) return;
+
+                        if (!data) {
+                            display.textContent = "No transcription data available yet. Please run a transcription job.";
+                            return;
+                        }
+
+                        if (type === 'json') display.textContent = JSON.stringify(data.json, null, 2);
+                        if (type === 'srt') display.textContent = data.srt || "No SRT data generated.";
+                        if (type === 'txt') display.textContent = data.txt || "No TXT data generated.";
+                    };
+                }
+
+                setInterval(injectTabs, 2000);
+                window._tsxStringifyPatched = true;
+            }
+        `).catch(() => { });
+    });
     // SAFETY: Prevent any links from opening inside the app window
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         // Only allow internal routes of the app
@@ -255,7 +368,27 @@ electron_1.ipcMain.handle('transcribe-media', async (event, options) => {
             onProgress: (p) => event.sender.send('transcribe-progress', p),
             onLog: (l) => event.sender.send('transcribe-log', l),
         });
-        return { success: true, transcription: JSON.stringify(jsonOutput) };
+        // 1. Separate the data strings
+        const casted = jsonOutput;
+        const srtData = casted.srt;
+        const txtData = casted.txt;
+        // Data will be returned to the renderer — user decides when to export via the UI.
+        const cleanJson = { ...casted };
+        delete cleanJson.srt;
+        delete cleanJson.txt;
+        console.log("Sending response:", {
+            json: !!cleanJson,
+            srt: !!srtData,
+            txt: !!txtData
+        });
+        return {
+            success: true,
+            transcription: JSON.stringify({
+                json: cleanJson,
+                srt: srtData || "",
+                txt: txtData || ""
+            })
+        };
     }
     catch (error) {
         return { success: false, error: error.message };

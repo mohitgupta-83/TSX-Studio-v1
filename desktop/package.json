@@ -62,7 +62,10 @@
         }
     },
     "dependencies": {
+        "@babel/standalone": "^7.29.2",
+        "@monaco-editor/react": "^4.7.0",
         "@remotion/bundler": "^4.0.0",
+        "@remotion/player": "^4.0.441",
         "@remotion/renderer": "^4.0.0",
         "axios": "^1.7.0",
         "chalk": "^4.1.2",
@@ -74,6 +77,7 @@
         "lucide-react": "latest",
         "react": "19.2.4",
         "react-dom": "19.2.4",
+        "remotion": "^4.0.441",
         "sonner": "^1.5.0",
         "tailwind-merge": "^2.5.0",
         "zustand": "^5.0.0"

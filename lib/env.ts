@@ -24,7 +24,7 @@ const envSchema = z.object({
 });
 
 export const validateEnv = () => {
-    const isBuildTime = process.env.NODE_ENV === 'production' && !!process.env.VERCEL;
+    const isBuildTime = process.env.NODE_ENV === 'production';
 
     const result = envSchema.safeParse(process.env);
 

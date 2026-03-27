@@ -100,26 +100,54 @@ export function LivePreview({
     // ============================================================
     const parseCompositionConfig = useCallback(
         (src: string) => {
-            // Parse fps — match `const fps = 30` or `fps: 30`
-            let fps = defaultFps;
+            // Multi-pass arithmetic evaluator — resolves chained variable dependencies
+            // and handles Math.ceil/floor/round safely without arbitrary eval.
+            const varMap: Record<string, number> = {};
+
+            // Seed fps from explicit declaration first
             const fpsAssign = src.match(/(?:const|let|var)\s+fps\s*=\s*(\d+)/);
             const fpsProp = src.match(/fps\s*:\s*(\d+)/);
-            if (fpsAssign) fps = parseInt(fpsAssign[1], 10);
-            else if (fpsProp) fps = parseInt(fpsProp[1], 10);
+            if (fpsAssign) varMap['fps'] = parseInt(fpsAssign[1], 10);
+            else if (fpsProp) varMap['fps'] = parseInt(fpsProp[1], 10);
+            else varMap['fps'] = defaultFps;
 
-            // Parse durationInFrames — match `const durationInFrames = 8 * fps`
-            // or `const durationInFrames = 240`
+            // Collect all variable declarations
+            const declarations: Array<{ name: string; expr: string }> = [];
+            const declRegex = /(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)/g;
+            let m: RegExpExecArray | null;
+            while ((m = declRegex.exec(src)) !== null) {
+                declarations.push({ name: m[1], expr: m[2].trim() });
+            }
+
+            // Iteratively resolve using variable substitution + safe evaluation
+            for (let pass = 0; pass < 5; pass++) {
+                for (const { name, expr } of declarations) {
+                    if (varMap[name] !== undefined) continue;
+                    let resolved = expr;
+                    for (const [k, v] of Object.entries(varMap)) {
+                        resolved = resolved.replace(new RegExp(`\\b${k}\\b`, 'g'), String(v));
+                    }
+                    // Strip Math.x identifiers for safety check, then evaluate with Math in scope
+                    const sanitized = resolved.replace(/\bMath\.(ceil|floor|round|abs|min|max)\b/g, '');
+                    if (/^[\d\s\+\-\*\/\.\(\),]+$/.test(sanitized)) {
+                        try {
+                            // eslint-disable-next-line no-new-func
+                            const val = new Function('Math', `"use strict"; return (${resolved})`)(Math) as number;
+                            if (typeof val === 'number' && isFinite(val) && val > 0) {
+                                varMap[name] = Math.round(val);
+                            }
+                        } catch { /* skip */ }
+                    }
+                }
+            }
+
+            const fps = varMap['fps'] ?? defaultFps;
+            // Use resolved durationInFrames → else durationInSeconds * fps → else prop
             let duration = defaultDuration;
-            const durMath = src.match(
-                /(?:const|let|var)\s+durationInFrames\s*=\s*(\d+)\s*\*\s*fps/
-            );
-            const durDirect = src.match(
-                /(?:const|let|var)\s+durationInFrames\s*=\s*(\d+)(?!\s*\*)/
-            );
-            if (durMath) {
-                duration = parseInt(durMath[1], 10) * fps;
-            } else if (durDirect) {
-                duration = parseInt(durDirect[1], 10);
+            if (varMap['durationInFrames'] && varMap['durationInFrames'] > 0) {
+                duration = varMap['durationInFrames'];
+            } else if (varMap['durationInSeconds'] && varMap['durationInSeconds'] > 0) {
+                duration = Math.round(varMap['durationInSeconds'] * fps);
             }
 
             return { fps, duration };

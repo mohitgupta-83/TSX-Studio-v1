@@ -34,18 +34,32 @@ export async function POST(req: Request) {
             // We interpret language through auto detect or model mapping internally
         });
 
+        const srtOutput = (jsonOutput as any).srt || "";
+        const txtOutput = (jsonOutput as any).txt || "";
+        const cleanJson = { ...jsonOutput };
+        delete (cleanJson as any).srt;
+        delete (cleanJson as any).txt;
+
         await db.transcriptionJob.update({
             where: { id: job.id },
             data: {
                 status: "DONE",
-                jsonOutput: JSON.stringify(jsonOutput),
+                jsonOutput: JSON.stringify(cleanJson),
             },
+        });
+
+        console.log("Sending response:", {
+            json: !!cleanJson,
+            srt: !!srtOutput,
+            txt: !!txtOutput
         });
 
         return NextResponse.json({
             id: job.id,
             status: "DONE",
-            jsonOutput: jsonOutput
+            json: cleanJson,
+            srt: srtOutput,
+            txt: txtOutput
         });
 
     } catch (error: any) {

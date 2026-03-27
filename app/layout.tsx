@@ -1,3 +1,5 @@
+export const dynamic = "force-static";
+
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
