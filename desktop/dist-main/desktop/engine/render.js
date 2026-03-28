@@ -10,9 +10,11 @@ const path_1 = __importDefault(require("path"));
 const fs_extra_1 = __importDefault(require("fs-extra"));
 const electron_1 = require("electron");
 const ffmpeg_1 = require("./ffmpeg");
+const os_1 = __importDefault(require("os"));
 async function reportProgress(jobId, progress, status = "RENDERING", filePath, durationSeconds, outputSizeBytes, errorMsg) {
     try {
-        const apiBase = electron_1.app.isPackaged ? 'https://tsx-studio-v2.vercel.app' : 'http://localhost:3000';
+        // MATCH THE NEW SIGMA PRODUCTION TARGET
+        const apiBase = electron_1.app.isPackaged ? 'https://tsx-studio-v1-sigma.vercel.app' : 'http://localhost:3000';
         await fetch(`${apiBase}/api/render`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -55,8 +57,8 @@ async function renderProject(options) {
     const cssPath = path_1.default.join(tempDir, 'styles.css');
     const outputPath = path_1.default.join(rendersDir, `render-${projectId}-${Date.now()}.mp4`);
     try {
-        await log('--- STARTING CLEAN RENDER ---');
-        const binDir = process.env.REMOTION_COMPOSITOR_BINARY_PATH;
+        await log('--- STARTING HIGH-PERFORMANCE RENDER ---');
+        const binDir = process.env.REMOTION_COMPOSITOR_BINARY_PATH || undefined;
         const ffmpegPath = process.env.FFMPEG_BINARY || (0, ffmpeg_1.getFFmpegPath)();
         await log('Step 1: Preparing build...');
         await fs_extra_1.default.writeFile(inputPath, code);
@@ -101,23 +103,30 @@ html, body, #root, [data-remotion-wrapper] {
             outDir: path_1.default.join(tempDir, 'bundle'),
         });
         await log('Step 3: Initializing Engine...');
-        // CRITICAL FIX: Also pass binDir to selectComposition to prevent pre-flight crash
         const composition = await (0, renderer_1.selectComposition)({
             serveUrl: bundled,
             id: 'Main',
-            binariesDirectory: binDir || undefined
+            binariesDirectory: binDir
         });
-        await log('Step 4: Rendering MP4...');
+        await log('Step 4: Rendering MP4 (PARALLEL MODE)...');
+        // CALC OPTIMAL CONCURRENCY FOR THIS MACHINE
+        const cpuCores = os_1.default.cpus().length;
+        const optimalConcurrency = Math.max(1, Math.min(cpuCores - 1, 16));
         await (0, renderer_1.renderMedia)({
             composition,
             serveUrl: bundled,
             codec: 'h264',
             outputLocation: outputPath,
-            concurrency: 1,
+            concurrency: optimalConcurrency,
             chromiumOptions: {
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+                args: [
+                    '--no-sandbox',
+                    '--hide-scrollbars',
+                    '--disable-web-security',
+                    '--font-render-hinting=none'
+                ],
             },
-            binariesDirectory: binDir || undefined,
+            binariesDirectory: binDir,
             ffmpegExecutable: ffmpegPath || undefined,
             ffprobeExecutable: process.env.FFPROBE_BINARY || (0, ffmpeg_1.getFFprobePath)() || undefined,
             onProgress: ({ progress }) => {

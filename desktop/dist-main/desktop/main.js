@@ -6,6 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
 const router_1 = require("../lib/asr-engine/router");
+const render_1 = require("./engine/render");
+const system_check_1 = require("./engine/system-check");
+const registry_1 = require("../lib/template-system/registry");
 function createWindow() {
     const mainWindow = new electron_1.BrowserWindow({
         width: 1400,
@@ -93,6 +96,41 @@ function createWindow() {
     });
 }
 // Whisper / Rendering Handlers (Required for the "New" app experience)
+electron_1.ipcMain.handle('check-system', async () => {
+    return await (0, system_check_1.checkSystem)();
+});
+electron_1.ipcMain.handle('render-project', async (event, options) => {
+    try {
+        const result = await (0, render_1.renderProject)({
+            ...options,
+            onProgress: (p) => event.sender.send('render-progress', p),
+            onLog: (l) => event.sender.send('render-log', l),
+        });
+        return { success: true, path: result };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+electron_1.ipcMain.handle('render-template', async (event, options) => {
+    try {
+        const { templateId, values, ...restOptions } = options;
+        const template = (0, registry_1.getTemplateById)(templateId);
+        if (!template)
+            throw new Error(`Template not found: ${templateId}`);
+        const code = template.generateCode(values);
+        const result = await (0, render_1.renderProject)({
+            ...restOptions,
+            code,
+            onProgress: (p) => event.sender.send('render-progress', p),
+            onLog: (l) => event.sender.send('render-log', l),
+        });
+        return { success: true, path: result };
+    }
+    catch (error) {
+        return { success: false, error: error.message };
+    }
+});
 electron_1.ipcMain.handle('transcribe-media', async (event, options) => {
     try {
         const output = await (0, router_1.processAudioWithEngine)({

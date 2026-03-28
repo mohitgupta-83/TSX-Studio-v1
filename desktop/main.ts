@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "path";
 import fs from "fs-extra";
 import { processAudioWithEngine } from "../lib/asr-engine/router";
+import { renderProject } from './engine/render';
+import { checkSystem } from './engine/system-check';
+import { getTemplateById } from '../lib/template-system/registry';
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -95,6 +98,42 @@ function createWindow() {
 }
 
 // Whisper / Rendering Handlers (Required for the "New" app experience)
+ipcMain.handle('check-system', async () => {
+  return await checkSystem();
+});
+
+ipcMain.handle('render-project', async (event, options) => {
+  try {
+    const result = await renderProject({
+      ...options,
+      onProgress: (p) => event.sender.send('render-progress', p),
+      onLog: (l) => event.sender.send('render-log', l),
+    });
+    return { success: true, path: result };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('render-template', async (event, options) => {
+  try {
+    const { templateId, values, ...restOptions } = options;
+    const template = getTemplateById(templateId);
+    if (!template) throw new Error(`Template not found: ${templateId}`);
+
+    const code = template.generateCode(values);
+    const result = await renderProject({
+      ...restOptions,
+      code,
+      onProgress: (p) => event.sender.send('render-progress', p),
+      onLog: (l) => event.sender.send('render-log', l),
+    });
+    return { success: true, path: result };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('transcribe-media', async (event, options) => {
   try {
     const output = await processAudioWithEngine({
