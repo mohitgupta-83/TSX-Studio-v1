@@ -140,12 +140,20 @@ html, body, #root, [data-remotion-wrapper] {
             codec: 'h264',
             outputLocation: outputPath,
             concurrency: optimalConcurrency,
+            frameFormat: 'jpeg', // MUCH FASTER THAN PNG ON WINDOWS
+            pixelFormat: 'yuv420p',
+            jpegQuality: 90,
             chromiumOptions: {
                 args: [
                     '--no-sandbox', 
                     '--hide-scrollbars',
                     '--disable-web-security',
-                    '--font-render-hinting=none'
+                    '--font-render-hinting=none',
+                    '--enable-accelerated-mjpeg-decode',
+                    '--enable-accelerated-video-decode',
+                    '--enable-gpu-rasterization',
+                    '--enable-native-gpu-memory-buffers',
+                    '--ignore-gpu-blocklist'
                 ],
             },
             binariesDirectory: binDir,
@@ -154,7 +162,8 @@ html, body, #root, [data-remotion-wrapper] {
             onProgress: ({ progress }) => {
                 const p = Math.round(progress * 100);
                 onProgress(p);
-                if (options.jobId) reportProgress(options.jobId, p, "RENDERING", undefined, durationSeconds);
+                // Heartbeat to prevent UI from thinking it is stuck
+                if (options.jobId && p % 5 === 0) reportProgress(options.jobId, p, "RENDERING", undefined, durationSeconds);
             },
         } as any);
 

@@ -157,6 +157,18 @@ ipcMain.handle('transcribe-media', async (event, options) => {
   }
 });
 
+ipcMain.handle('open-path', async (event, filePath) => {
+  try {
+    if (await fs.pathExists(filePath)) {
+      shell.showItemInFolder(filePath);
+      return { success: true };
+    }
+    return { success: false, error: "File not found" };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {

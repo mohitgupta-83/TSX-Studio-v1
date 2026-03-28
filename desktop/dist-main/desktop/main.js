@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path_1 = __importDefault(require("path"));
+const fs_extra_1 = __importDefault(require("fs-extra"));
 const router_1 = require("../lib/asr-engine/router");
 const render_1 = require("./engine/render");
 const system_check_1 = require("./engine/system-check");
@@ -149,6 +150,18 @@ electron_1.ipcMain.handle('transcribe-media', async (event, options) => {
                 txt: casted.txt || ""
             })
         };
+    }
+    catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+electron_1.ipcMain.handle('open-path', async (event, filePath) => {
+    try {
+        if (await fs_extra_1.default.pathExists(filePath)) {
+            electron_1.shell.showItemInFolder(filePath);
+            return { success: true };
+        }
+        return { success: false, error: "File not found" };
     }
     catch (e) {
         return { success: false, error: e.message };
