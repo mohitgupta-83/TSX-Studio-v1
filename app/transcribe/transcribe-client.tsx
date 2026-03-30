@@ -74,6 +74,9 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     const [captionStyle, setCaptionStyle] = useState("clean");
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedProjectId, setGeneratedProjectId] = useState<string | null>(null);
+    const [transcriptionMode, setTranscriptionMode] = useState<"cloud" | "local">("cloud");
+    const [mainTab, setMainTab] = useState<"upload" | "import">("upload");
+    const [importText, setImportText] = useState("");
 
     // Electron Progress Listener
     useEffect(() => {
@@ -155,10 +158,146 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
         }
     };
 
+    const handleImport = () => {
+        if (!importText.trim()) {
+            toast.error("Please paste transcript content.");
+            return;
+        }
+
+        try {
+            const isSrt = importText.includes('-->');
+            let parsedSegments = [];
+
+            if (isSrt) {
+                const blocks = importText.split(/\n\s*\n/).filter(x => x.trim().length > 0);
+                parsedSegments = blocks.map((block: string) => {
+                    const lines = block.split('\n');
+                    const timeCodeLine = lines.find((l: string) => l.includes('-->'));
+                    if (!timeCodeLine) return null;
+                    
+                    const textLines = lines.slice(lines.indexOf(timeCodeLine) + 1).join(' ').trim();
+                    const [startStr, endStr] = timeCodeLine.split('-->').map((s: string) => s.trim());
+                    
+                    const parseTime = (str: string) => {
+                        const [hours, mins, rest] = str.split(':');
+                        const [secs, ms] = rest.split(',');
+                        return parseInt(hours) * 3600 + parseInt(mins) * 60 + parseInt(secs) + (parseInt(ms) || 0) / 1000;
+                    };
+                    
+                    return {
+                        start: parseTime(startStr),
+                        end: parseTime(endStr),
+                        text: textLines
+                    };
+                }).filter(Boolean);
+            } else {
+                const sentences = importText.match(/[^.!?]+[.!?]+|\s*[^.!?]+\s*$/g)?.map(s => s.trim()).filter(x => x.length > 0) || [];
+                const estDurationPerSentence = 3; 
+                parsedSegments = sentences.map((sentence, index) => {
+                    return {
+                        start: index * estDurationPerSentence,
+                        end: (index + 1) * estDurationPerSentence,
+                        text: sentence
+                    };
+                });
+            }
+
+            const cleanJsonData = {
+                language: 'en',
+                duration: parsedSegments.length ? parsedSegments[parsedSegments.length - 1]?.end || 0 : 0,
+                segments: parsedSegments
+            };
+
+            setTranscript({
+                json: cleanJsonData,
+                srt: isSrt ? importText : "",
+                txt: !isSrt ? importText : ""
+            });
+            setActiveTab("json");
+            setMainTab("upload");
+            toast.success("Transcript Imported!");
+
+        } catch (error) {
+            toast.error("Failed to parse transcript. Check format.");
+        }
+    };
+
     const handleUpload = async () => {
         if (!selectedFile) return;
 
-        // Check for Electron Env
+        if (transcriptionMode === "cloud") {
+            const indianLangs = ["hi", "hinglish", "ta", "te", "bn"];
+            if (indianLangs.includes(selectedLanguage)) {
+                toast.info("Indian languages works best on Desktop.");
+                router.push("/transcribe-india");
+                return;
+            }
+
+            setIsUploading(true);
+            setActiveJobId("cloud-job");
+            setLastLog("Uploading to Cloud...");
+
+            try {
+                const formData = new FormData();
+                formData.append("file", selectedFile);
+                formData.append("language", selectedLanguage);
+
+                const response = await fetch("/api/transcribe-groq", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error("Cloud transcription unavailable. Try again or use desktop version.");
+                }
+
+                const result = await response.json();
+                if (result.success) {
+                    const parsed = JSON.parse(result.transcription);
+                    const newJob = {
+                        id: Math.random().toString(36).substr(2, 9),
+                        status: "DONE",
+                        model: "whisper-large-v3",
+                        fileName: selectedFile.name,
+                        durationSeconds: parsed.duration || 0,
+                        errorMessage: null,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        hasOutput: true,
+                        transcriptionOutput: result.transcription
+                    };
+
+                    setJobs(prev => {
+                        const updated = [newJob, ...prev];
+                        localStorage.setItem("tsx-studio-jobs", JSON.stringify(updated));
+                        return updated;
+                    });
+                    
+                    const cleanJsonData = { ...parsed };
+                    delete cleanJsonData.srt;
+                    delete cleanJsonData.txt;
+
+                    setTranscript({
+                        json: cleanJsonData,
+                        srt: parsed.srt || "",
+                        txt: parsed.txt || ""
+                    });
+                    setActiveTab("json");
+                    toast.success("Cloud Transcription Complete!");
+                    setSelectedFile(null);
+                } else {
+                    throw new Error("Cloud transcription failed");
+                }
+            } catch (error: any) {
+                toast.error(error.message || "Cloud transcription unavailable. Try again or use desktop version.");
+                setLastLog(`[ERROR] ${error.message}`);
+            } finally {
+                setIsUploading(false);
+                setActiveJobId(null);
+            }
+            return;
+        }
+
         const isElectron = typeof window !== 'undefined' && (window as any).electronAPI;
         if (!isElectron) {
             toast.error("Desktop App Required", { description: "Local transcription requires the desktop app." });
@@ -261,25 +400,27 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
         }
     };
 
-    const handleDownload = async (jobId: string) => {
+    const handleDownload = async (jobId: string, format?: "json" | "srt" | "txt") => {
         if (transcript) {
             let content = "";
             let type = "text/plain";
             let ext = "txt";
             
-            if (activeTab === "json") {
+            const targetFormat = format || activeTab;
+
+            if (targetFormat === "json") {
                 content = JSON.stringify(transcript.json, null, 2);
                 type = "application/json";
                 ext = "json";
-            } else if (activeTab === "srt") {
+            } else if (targetFormat === "srt") {
                 content = transcript.srt;
                 ext = "srt";
-            } else if (activeTab === "txt") {
+            } else if (targetFormat === "txt") {
                 content = transcript.txt;
             }
 
             if (!content) {
-                toast.error(`Format ${activeTab} not generated for this file unfortunately.`);
+                toast.error(`Format ${targetFormat} not generated for this file unfortunately.`);
                 return;
             }
 
@@ -449,7 +590,34 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 )}
             </div>
 
-            {!isElectron ? (
+                        <div className="flex gap-2 p-1 bg-white/5 w-max rounded-xl mb-6">
+                <button 
+                  onClick={() => setMainTab("upload")}
+                  className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mainTab === "upload" ? "bg-primary text-white" : "text-white/50 hover:text-white"}`}
+                >Upload & Transcribe</button>
+                <button 
+                  onClick={() => setMainTab("import")}
+                  className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mainTab === "import" ? "bg-primary text-white" : "text-white/50 hover:text-white"}`}
+                >Import Transcript</button>
+            </div>
+
+            {mainTab === "import" ? (
+                <div className="max-w-4xl mx-auto space-y-4">
+                    <div className="bg-card/50 border border-white/5 p-8 rounded-3xl">
+                        <h3 className="text-xl font-bold mb-2">Import SRT or TXT</h3>
+                        <p className="text-muted-foreground text-sm mb-6">Paste your existing transcript here to convert it into the platform's standard JSON format.</p>
+                        <textarea 
+                            value={importText}
+                            onChange={(e) => setImportText(e.target.value)}
+                            className="w-full h-64 bg-black/50 border border-white/10 rounded-xl p-4 text-sm font-mono text-white/80 focus:border-primary outline-none resize-none"
+                            placeholder="1&#10;00:00:00,000 --> 00:00:02,500&#10;Hello world..."
+                        />
+                        <Button onClick={handleImport} className="mt-4 w-full h-12 rounded-xl font-bold">
+                            Parse & Convert to JSON
+                        </Button>
+                    </div>
+                </div>
+            ) : (!isElectron && transcriptionMode === "local" ? (
                 <div className="max-w-4xl mx-auto py-12">
                     <div className="bg-gradient-to-br from-primary/10 to-blue-500/10 border border-white/5 rounded-[48px] p-12 text-center space-y-8 relative overflow-hidden backdrop-blur-3xl shadow-2xl">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-30" />
@@ -569,7 +737,22 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
 
                         {/* Settings */}
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2 sm:col-span-1">
+                            <div className="col-span-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
+                                    Transcription Mode
+                                </label>
+                                <div className="flex gap-2 p-1 bg-black/20 border border-white/5 w-full rounded-xl">
+                                    <button 
+                                        onClick={(e) => { e.preventDefault(); setTranscriptionMode("cloud"); }}
+                                        className={`flex-1 px-4 py-3 rounded-lg text-sm font-bold transition-all ${transcriptionMode === "cloud" ? "bg-primary text-white shadow-lg" : "text-white/50 hover:text-white"}`}
+                                    >Cloud (Fast)</button>
+                                    <button 
+                                        onClick={(e) => { e.preventDefault(); setTranscriptionMode("local"); }}
+                                        className={`flex-1 px-4 py-3 rounded-lg text-sm font-bold transition-all ${transcriptionMode === "local" ? "bg-primary text-white shadow-lg" : "text-white/50 hover:text-white"}`}
+                                    >Local (Desktop)</button>
+                                </div>
+                            </div>
+                            <div className="col-span-2 sm:col-span-1 border-t border-white/5 pt-4 mt-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
                                     Whisper Model
                                 </label>
@@ -590,7 +773,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                 </Select>
                             </div>
 
-                            <div className="col-span-2 sm:col-span-1">
+                            <div className="col-span-2 sm:col-span-1 border-t border-white/5 pt-4 mt-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
                                     Language
                                 </label>
@@ -600,10 +783,15 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                     </SelectTrigger>
                                     <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
                                         <SelectItem value="auto">Auto Detect</SelectItem>
-                                        <SelectItem value="en">English</SelectItem>
-                                        <SelectItem value="hi">Hindi</SelectItem>
-                                        <SelectItem value="hinglish">Hinglish</SelectItem>
-                                        <SelectItem value="ta">Other Indian Languages</SelectItem>
+                                        <SelectItem value="en" className="font-bold text-primary">English (Global)</SelectItem>
+                                        <SelectItem value="es" className="text-primary/70">Spanish</SelectItem>
+                                        <SelectItem value="fr" className="text-primary/70">French</SelectItem>
+                                        <SelectItem value="de" className="text-primary/70">German</SelectItem>
+                                        <SelectItem value="hi" className="font-bold text-orange-400">Hindi (Indian)</SelectItem>
+                                        <SelectItem value="hinglish" className="text-orange-400">Hinglish</SelectItem>
+                                        <SelectItem value="ta" className="text-orange-400">Tamil (Indian)</SelectItem>
+                                        <SelectItem value="te" className="text-orange-400">Telugu (Indian)</SelectItem>
+                                        <SelectItem value="bn" className="text-orange-400">Bengali (Indian)</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 {selectedLanguage === "hinglish" && (
@@ -852,22 +1040,35 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                             </div>
                         </div>
 
-                        {/* Download Button */}
+                        {/* Download Buttons */}
                         {transcript && (
-                            <div className="flex gap-3">
+                            <div className="grid grid-cols-3 gap-3">
                                 <Button
-                                    onClick={() => handleDownload("current")}
-                                    className="flex-1 h-12 rounded-xl font-black italic text-xs tracking-widest lowercase"
+                                    onClick={() => handleDownload("current", "json")}
+                                    className="h-12 rounded-xl font-black italic text-[10px] tracking-widest uppercase bg-white/5 border border-white/10 hover:bg-white/10"
                                 >
-                                    <Download className="w-4 h-4 mr-2" />
-                                    download.{activeTab}
+                                    <Download className="w-3 h-3 mr-2" />
+                                    JSON
+                                </Button>
+                                <Button
+                                    onClick={() => handleDownload("current", "srt")}
+                                    className="h-12 rounded-xl font-black italic text-[10px] tracking-widest uppercase bg-white/5 border border-white/10 hover:bg-white/10"
+                                >
+                                    <Download className="w-3 h-3 mr-2" />
+                                    SRT
+                                </Button>
+                                <Button
+                                    onClick={() => handleDownload("current", "txt")}
+                                    className="h-12 rounded-xl font-black italic text-[10px] tracking-widest uppercase bg-white/5 border border-white/10 hover:bg-white/10"
+                                >
+                                    <Download className="w-3 h-3 mr-2" />
+                                    TXT
                                 </Button>
                             </div>
                         )}
                     </div>
                 </div>
-            )
-            }
-        </div >
+            ))}
+        </div>
     );
 }
