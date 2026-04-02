@@ -10,12 +10,13 @@ export interface RouteTranscribeOptions {
     audioPath: string;
     languageMode?: string; // 'auto', 'en', 'hi', 'hinglish', etc
     model?: string; // 'tiny', 'base', 'small', 'medium', 'large'
+    scriptMode?: string; // 'Auto', 'Hindi', 'Mixed', 'Romanized', 'Urdu'
     onProgress?: (progress: number) => void;
     onLog?: (log: string) => void;
 }
 
 export async function processAudioWithEngine(options: RouteTranscribeOptions): Promise<ASRResult> {
-    const { audioPath, languageMode = 'auto', model = 'base', onProgress, onLog } = options;
+    const { audioPath, languageMode = 'auto', model = 'base', scriptMode, onProgress, onLog } = options;
     
     // STEP 6: Preprocess Audio for massive speed gains
     if (onLog) onLog("[ASR ROUTER] Preprocessing audio to 16kHz Mono...");
@@ -28,7 +29,8 @@ export async function processAudioWithEngine(options: RouteTranscribeOptions): P
         if (onLog) onLog(`[ASR ROUTER] Final Language Route: ${detectedLanguage}`);
         
         // STEP 3: Model Routing
-        const isIndic = INDIC_LANGUAGES.includes(detectedLanguage);
+        // Bypass IndicConformer if Romanized script is explicitly requested, as IndicConformer strictly outputs Devanagari
+        const isIndic = INDIC_LANGUAGES.includes(detectedLanguage) && scriptMode !== 'Romanized';
         
         let result: ASRResult;
         
@@ -58,6 +60,7 @@ export async function processAudioWithEngine(options: RouteTranscribeOptions): P
             result = await transcribeWithWhisper(cleanAudioPath, {
                 language: detectedLanguage,
                 model,
+                scriptMode,
                 onProgress,
                 onLog
             });

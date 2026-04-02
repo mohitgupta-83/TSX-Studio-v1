@@ -11,7 +11,7 @@ const indic_1 = require("./indic");
 const promises_1 = __importDefault(require("fs/promises"));
 const INDIC_LANGUAGES = ["hi", "hinglish", "ta", "te", "bn", "ml", "kn", "mr", "gu", "pa", "or", "as"];
 async function processAudioWithEngine(options) {
-    const { audioPath, languageMode = 'auto', model = 'base', onProgress, onLog } = options;
+    const { audioPath, languageMode = 'auto', model = 'base', scriptMode, onProgress, onLog } = options;
     // STEP 6: Preprocess Audio for massive speed gains
     if (onLog)
         onLog("[ASR ROUTER] Preprocessing audio to 16kHz Mono...");
@@ -24,7 +24,8 @@ async function processAudioWithEngine(options) {
         if (onLog)
             onLog(`[ASR ROUTER] Final Language Route: ${detectedLanguage}`);
         // STEP 3: Model Routing
-        const isIndic = INDIC_LANGUAGES.includes(detectedLanguage);
+        // Bypass IndicConformer if Romanized script is explicitly requested, as IndicConformer strictly outputs Devanagari
+        const isIndic = INDIC_LANGUAGES.includes(detectedLanguage) && scriptMode !== 'Romanized';
         let result;
         if (isIndic) {
             if (onLog)
@@ -56,6 +57,7 @@ async function processAudioWithEngine(options) {
             result = await (0, whisper_1.transcribeWithWhisper)(cleanAudioPath, {
                 language: detectedLanguage,
                 model,
+                scriptMode,
                 onProgress,
                 onLog
             });

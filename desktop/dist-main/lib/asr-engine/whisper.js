@@ -8,7 +8,7 @@ const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
 const promises_1 = __importDefault(require("fs/promises"));
 async function transcribeWithWhisper(audioPath, options) {
-    const { language = 'auto', model = 'base', onProgress, onLog } = options;
+    const { language = 'auto', model = 'base', scriptMode, onProgress, onLog } = options;
     const outputDir = path_1.default.dirname(audioPath);
     const fileNameNoExt = path_1.default.basename(audioPath, path_1.default.extname(audioPath));
     const jsonPath = path_1.default.join(outputDir, `${fileNameNoExt}.json`);
@@ -27,7 +27,10 @@ async function transcribeWithWhisper(audioPath, options) {
     ];
     if (language && language !== 'auto') {
         commandArgs.push('--language', language);
-        if (language === 'hi') {
+        if (scriptMode === 'Romanized' || language === 'hinglish') {
+            commandArgs.push('--initial_prompt', 'Transcribe exactly in Romanized Hindi / Hinglish. Use the English alphabet only. Do NOT use Devanagari script. Maintain the Hindi meaning.');
+        }
+        else if (language === 'hi') {
             commandArgs.push('--initial_prompt', 'नमस्ते, आप कैसे हैं? यह हिंदी देवनागरी लिपि है।');
         }
     }

@@ -138,16 +138,21 @@ electron_1.ipcMain.handle('transcribe-media', async (event, options) => {
             audioPath: options.filePath,
             languageMode: options.language || 'auto',
             model: options.model || 'base',
+            scriptMode: options.script,
             onProgress: (p) => event.sender.send('transcribe-progress', p),
             onLog: (l) => event.sender.send('transcribe-log', l),
         });
         const casted = output;
+        const srt = casted.srt || "";
+        const txt = casted.txt || "";
+        delete casted.srt;
+        delete casted.txt;
         return {
             success: true,
             transcription: JSON.stringify({
                 json: casted,
-                srt: casted.srt || "",
-                txt: casted.txt || ""
+                srt: srt,
+                txt: txt
             })
         };
     }

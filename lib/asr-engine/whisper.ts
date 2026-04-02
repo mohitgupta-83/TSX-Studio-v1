@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 export interface WhisperOptions {
     language?: string;
     model?: string;
+    scriptMode?: string;
     onProgress?: (progress: number) => void;
     onLog?: (log: string) => void;
 }
@@ -16,7 +17,7 @@ export interface ASRResult {
 }
 
 export async function transcribeWithWhisper(audioPath: string, options: WhisperOptions): Promise<ASRResult> {
-    const { language = 'auto', model = 'base', onProgress, onLog } = options;
+    const { language = 'auto', model = 'base', scriptMode, onProgress, onLog } = options;
     const outputDir = path.dirname(audioPath);
     const fileNameNoExt = path.basename(audioPath, path.extname(audioPath));
     const jsonPath = path.join(outputDir, `${fileNameNoExt}.json`);
@@ -38,7 +39,9 @@ export async function transcribeWithWhisper(audioPath: string, options: WhisperO
 
     if (language && language !== 'auto') {
         commandArgs.push('--language', language);
-        if (language === 'hi') {
+        if (scriptMode === 'Romanized' || language === 'hinglish') {
+            commandArgs.push('--initial_prompt', 'Transcribe exactly in Romanized Hindi / Hinglish. Use the English alphabet only. Do NOT use Devanagari script. Maintain the Hindi meaning.');
+        } else if (language === 'hi') {
             commandArgs.push('--initial_prompt', 'नमस्ते, आप कैसे हैं? यह हिंदी देवनागरी लिपि है।');
         }
     }

@@ -241,6 +241,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 const formData = new FormData();
                 formData.append("file", selectedFile);
                 formData.append("language", selectedLanguage);
+                formData.append("script", selectedScript);
 
                 const response = await fetch("/api/transcribe-groq", {
                     method: "POST",
@@ -259,7 +260,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                         status: "DONE",
                         model: "whisper-large-v3",
                         fileName: selectedFile.name,
-                        durationSeconds: parsed.duration || 0,
+                        durationSeconds: parsed.json?.duration || 0,
                         errorMessage: null,
                         createdAt: new Date().toISOString(),
                         updatedAt: new Date().toISOString(),
@@ -272,13 +273,9 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                         localStorage.setItem("tsx-studio-jobs", JSON.stringify(updated));
                         return updated;
                     });
-                    
-                    const cleanJsonData = { ...parsed };
-                    delete cleanJsonData.srt;
-                    delete cleanJsonData.txt;
 
                     setTranscript({
-                        json: cleanJsonData,
+                        json: parsed.json || parsed,
                         srt: parsed.srt || "",
                         txt: parsed.txt || ""
                     });
@@ -318,7 +315,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
             // Call Electron API
             const result = await (window as any).electronAPI.transcribeMedia({
                 filePath,
-                model: selectedModel,
+                model: selectedModel, script: selectedScript,
                 language: selectedLanguage
             });
 
@@ -1042,26 +1039,26 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
 
                         {/* Download Buttons */}
                         {transcript && (
-                            <div className="grid grid-cols-3 gap-3">
+                            <div className="grid grid-cols-3 gap-4">
                                 <Button
                                     onClick={() => handleDownload("current", "json")}
-                                    className="h-12 rounded-xl font-black italic text-[10px] tracking-widest uppercase bg-white/5 border border-white/10 hover:bg-white/10"
+                                    className="h-14 rounded-2xl font-black italic text-[14px] tracking-widest uppercase bg-blue-500 text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] border-0 hover:bg-blue-400 hover:scale-105 transition-all"
                                 >
-                                    <Download className="w-3 h-3 mr-2" />
+                                    <Download className="w-5 h-5 mr-3" />
                                     JSON
                                 </Button>
                                 <Button
                                     onClick={() => handleDownload("current", "srt")}
-                                    className="h-12 rounded-xl font-black italic text-[10px] tracking-widest uppercase bg-white/5 border border-white/10 hover:bg-white/10"
+                                    className="h-14 rounded-2xl font-black italic text-[14px] tracking-widest uppercase bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.5)] border-0 hover:bg-emerald-400 hover:scale-105 transition-all"
                                 >
-                                    <Download className="w-3 h-3 mr-2" />
+                                    <Download className="w-5 h-5 mr-3" />
                                     SRT
                                 </Button>
                                 <Button
                                     onClick={() => handleDownload("current", "txt")}
-                                    className="h-12 rounded-xl font-black italic text-[10px] tracking-widest uppercase bg-white/5 border border-white/10 hover:bg-white/10"
+                                    className="h-14 rounded-2xl font-black italic text-[14px] tracking-widest uppercase bg-purple-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.5)] border-0 hover:bg-purple-400 hover:scale-105 transition-all"
                                 >
-                                    <Download className="w-3 h-3 mr-2" />
+                                    <Download className="w-5 h-5 mr-3" />
                                     TXT
                                 </Button>
                             </div>

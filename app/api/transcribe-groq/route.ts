@@ -5,7 +5,7 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY || "gsk_mLhsDzLcblkBeaTw8faLWGdyb3
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
-    const file = formData.get('file') as Blob;
+    const file = formData.get('file') as File;
     const language = formData.get('language') as string;
 
     if (!file) {
@@ -13,13 +13,20 @@ export async function POST(req: Request) {
     }
 
     const groqFormData = new FormData();
-    groqFormData.append('file', file, 'audio.mp3'); // or whatever filename
+    groqFormData.append('file', file, file.name || 'audio.mp4');
     groqFormData.append('model', 'whisper-large-v3');
     groqFormData.append('temperature', '0');
     groqFormData.append('response_format', 'verbose_json');
     
     if (language && language !== 'auto') {
       groqFormData.append('language', language);
+    }
+    
+    const script = formData.get('script') as string;
+    if (script === 'Romanized' || language === 'hinglish') {
+        groqFormData.append('prompt', 'Transcribe exactly in Romanized Hindi / Hinglish. Use the English alphabet only. Do NOT use Devanagari script. Maintain the Hindi meaning.');
+    } else if (script === 'Hindi') {
+        groqFormData.append('prompt', 'Transcribe in pure Hindi Devanagari script.');
     }
 
     console.log("Sending to Groq API...");
@@ -50,6 +57,38 @@ export async function POST(req: Request) {
       })) : []
     };
 
+    // Split overly long segments to match local transcription (1.5-2 seconds)
+    const MAX_DURATION = 1.6;
+    const finalSegments: any[] = [];
+    
+    jsonOutput.segments.forEach((seg: any) => {
+        const duration = seg.end - seg.start;
+        if (duration > MAX_DURATION) {
+            const words = seg.text.split(' ');
+            const numChunks = Math.ceil(duration / MAX_DURATION);
+            const wordsPerChunk = Math.ceil(words.length / numChunks);
+            for (let i = 0; i < numChunks; i++) {
+                const chunkWords = words.slice(i * wordsPerChunk, (i + 1) * wordsPerChunk);
+                if (chunkWords.length === 0) continue;
+                const chunkStart = seg.start + (i * (duration / numChunks));
+                const chunkEnd = (i === numChunks - 1) ? seg.end : seg.start + ((i + 1) * (duration / numChunks));
+                finalSegments.push({
+                    start: Number(chunkStart.toFixed(2)),
+                    end: Number(chunkEnd.toFixed(2)),
+                    text: chunkWords.join(' ')
+                });
+            }
+        } else {
+            finalSegments.push({
+                start: Number(seg.start.toFixed(2)),
+                end: Number(seg.end.toFixed(2)),
+                text: seg.text
+            });
+        }
+    });
+
+    jsonOutput.segments = finalSegments.map((s, idx) => ({ ...s, id: idx + 1 }));
+
     // Generate TXT format
     const txtOutput = jsonOutput.segments.map((s: any) => s.text).join(' ');
 
@@ -69,7 +108,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       transcription: JSON.stringify({
-        ...jsonOutput,
+        json: jsonOutput,
         txt: txtOutput,
         srt: srtOutput
       })

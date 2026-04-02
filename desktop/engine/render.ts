@@ -23,7 +23,7 @@ async function reportProgress(jobId: string, progress: number, status = "RENDERI
     try {
         // MATCH THE NEW SIGMA PRODUCTION TARGET
         const apiBase = app.isPackaged ? 'https://tsx-studio-v1-sigma.vercel.app' : 'http://localhost:3000';
-        
+
         await fetch(`${apiBase}/api/render`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -145,7 +145,7 @@ html, body, #root, [data-remotion-wrapper] {
             jpegQuality: 90,
             chromiumOptions: {
                 args: [
-                    '--no-sandbox', 
+                    '--no-sandbox',
                     '--hide-scrollbars',
                     '--disable-web-security',
                     '--font-render-hinting=none',
