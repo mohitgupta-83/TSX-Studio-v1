@@ -371,22 +371,17 @@ export function StudioClient({
 
     const [validatedCode, setValidatedCode] = useState(code);
 
-    const validateCode = useCallback(() => {
+    useEffect(() => {
         setIsValidating(true);
-        setValidationResult(null);
-        setTimeout(() => {
+        const timer = setTimeout(() => {
             const res = validateTsxCode(code);
             setValidationResult({ valid: res.ok, errors: res.errors });
             setIsValidating(false);
             if (res.ok) {
                 setValidatedCode(code);
-                toast.success("Validation passed!", { description: "Ready for export node cluster." });
-            } else {
-                toast.error("Code rejected by compiler", {
-                    description: res.errors.filter(e => e.severity === 'error').length + " high-priority issue(s) detected."
-                });
             }
-        }, 800);
+        }, 1000);
+        return () => clearTimeout(timer);
     }, [code]);
 
     const handleSave = async () => {
@@ -461,9 +456,10 @@ export function StudioClient({
                             <Sparkles className="w-3.5 h-3.5 mr-2" /> Try Sample
                         </Button>
                     )}
-                    <Button variant="outline" size="sm" onClick={validateCode} disabled={isValidating}>
-                        {isValidating ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> : <Play className="w-3.5 h-3.5 mr-2" />} Run Preview
-                    </Button>
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-xs text-muted-foreground mr-2">
+                        {isValidating ? <Loader2 className="w-3 h-3 animate-spin text-primary" /> : (validationResult?.valid ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-destructive" />)}
+                        {isValidating ? "Updating..." : (validationResult?.valid ? "Preview Live" : "Errors Detected")}
+                    </div>
                     {!isReadOnly && (
                         <Button size="sm" onClick={handleSave} disabled={isSaving || !hasUnsavedChanges}>
                             {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}

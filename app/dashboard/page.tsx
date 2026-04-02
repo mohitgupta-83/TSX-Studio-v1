@@ -68,6 +68,7 @@ export default async function DashboardPage() {
             id: p.versions[0].id,
             title: p.versions[0].title,
             validated: p.versions[0].validated,
+            code: p.versions[0].code,
         } : null,
         _count: p._count,
     }));

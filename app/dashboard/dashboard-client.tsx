@@ -7,6 +7,7 @@ import { Plus, Search, Filter, MoreVertical, Play, Clock, CheckCircle2, AlertCir
 import { Button } from "@/components/ui/button";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
 import { GenerateFullVideoDialog } from "@/components/generate-full-video-dialog";
+import { LivePreview } from "@/components/live-preview";
 import { Input } from "@/components/ui/input";
 import {
     Card,
@@ -41,6 +42,7 @@ interface Project {
         id: string;
         title: string | null;
         validated: boolean;
+        code?: string;
     } | null;
     _count: {
         versions: number;
@@ -241,6 +243,7 @@ function StatCard({ title, value, icon, trend = "neutral" }: { title: string, va
 function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDelete: (id: string) => void, isDeleting: boolean }) {
     const updatedAt = formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true });
     const [imgError, setImgError] = useState(false);
+    const [isHovered, setIsHovered] = useState(false);
 
     const getStatusBadge = (status: string) => {
         switch (status.toLowerCase()) {
@@ -254,8 +257,13 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
     };
 
     return (
-        <Card className="group border-white/5 bg-card/30 backdrop-blur-xl hover:border-primary/20 transition-all duration-300 overflow-hidden rounded-3xl">
+        <Card 
+            className="group border-white/5 bg-card/30 backdrop-blur-xl hover:border-primary/20 transition-all duration-300 overflow-hidden rounded-3xl"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+        >
             <div className="aspect-video bg-neutral-900 relative flex items-center justify-center group-hover:bg-neutral-800 transition-colors overflow-hidden">
+                {/* Fallback/Snapshot rendered independently so it stays underneath during compile delay */}
                 {project.thumbnailUrl && !imgError ? (
                     <img
                         src={project.thumbnailUrl}
@@ -268,6 +276,13 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
                         <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
                     </div>
                 )}
+                {isHovered && project.latestVersion?.code ? (
+                    <div className="absolute inset-0 pointer-events-none origin-center flex items-center justify-center mt-[-30px]" style={{ transform: "scale(0.32)" }}>
+                        <div style={{ width: 1080, height: 1920, position: 'relative' }}>
+                            <LivePreview code={project.latestVersion.code} isValid={true} width={1080} height={1920} fps={30} durationInFrames={300} disableUI={true} />
+                        </div>
+                    </div>
+                ) : null}
                 <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>

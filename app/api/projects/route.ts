@@ -64,7 +64,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        let { name, resolution = "1080p", fps = 30, workspaceId, thumbnailUrl } = body;
+        let { name, resolution = "1080p", fps = 30, workspaceId, thumbnailUrl, code } = body;
 
         // Defensive parsing
         fps = parseInt(String(fps));
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
                     create: {
                         versionNumber: 1,
                         title: "Initial Draft",
-                        code: `import { AbsoluteFill, useCurrentFrame, interpolate, spring } from 'remotion';
+                        code: code || `import { AbsoluteFill, useCurrentFrame, interpolate, spring } from 'remotion';
 import React from 'react';
 
 export const fps = 30;

@@ -59,6 +59,8 @@ interface LivePreviewProps {
     height: number;
     fps?: number;
     durationInFrames?: number;
+    disableUI?: boolean;
+    autoPlay?: boolean;
 }
 
 export function LivePreview({
@@ -68,6 +70,8 @@ export function LivePreview({
     height = DEFAULT_HEIGHT,
     fps: defaultFps = DEFAULT_FPS,
     durationInFrames: defaultDuration = DEFAULT_DURATION,
+    disableUI = false,
+    autoPlay = true,
 }: LivePreviewProps) {
     // ============================================================
     // STEP 1 — Preview instance counter for forced remount
@@ -343,6 +347,14 @@ export function LivePreview({
     // Error state
     // ============================================================
     if (error) {
+        if (disableUI) {
+            return (
+                <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-black/60 backdrop-blur-sm text-white font-mono text-xs">
+                    <span className="opacity-50 tracking-widest uppercase font-bold">Preview unavailable</span>
+                </div>
+            );
+        }
+        
         return (
             <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-black text-red-500 font-mono text-xs overflow-auto">
                 <AlertCircle className="w-8 h-8 mb-4 opacity-50" />
@@ -368,6 +380,7 @@ export function LivePreview({
     // Loading state
     // ============================================================
     if (!fontsReady || status === "compiling") {
+        if (disableUI) return <div className="w-full h-full flex items-center justify-center bg-transparent backdrop-blur-[2px] transition-all duration-300"><Loader2 className="w-12 h-12 animate-spin text-white opacity-80 drop-shadow-2xl shadow-black" /></div>;
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-black text-primary/50">
                 <Loader2 className="w-8 h-8 animate-spin mb-4" />
@@ -382,6 +395,7 @@ export function LivePreview({
     // Idle state (no code validated yet)
     // ============================================================
     if (status === "idle" || !preview.Component) {
+        if (disableUI) return null;
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white/20">
                 <span className="text-xs uppercase font-bold tracking-widest">
@@ -396,7 +410,7 @@ export function LivePreview({
     // ============================================================
     return (
         <div
-            className="w-full h-full relative group bg-black"
+            className={`w-full h-full relative group ${disableUI ? "bg-transparent" : "bg-black"}`}
             style={{
                 display: "flex",
                 flexDirection: "column",
@@ -404,6 +418,7 @@ export function LivePreview({
             }}
         >
             {/* STEP 14 — Debug overlay (toggle with Ctrl+Shift+D or hover) */}
+            {!disableUI && (
             <div
                 className="absolute top-2 left-2 z-50 bg-black/80 backdrop-blur-md border border-white/10 rounded-md p-2 text-[10px] font-mono text-white/70 transition-opacity"
                 style={{ opacity: debugVisible ? 1 : 0, pointerEvents: debugVisible ? "auto" : "none" }}
@@ -441,6 +456,7 @@ export function LivePreview({
                     </span>
                 </div>
             </div>
+            )}
 
             {/* STEP 5, 1 — The Remotion Player with forced remount via key */}
             <div
@@ -458,8 +474,8 @@ export function LivePreview({
                         compositionWidth={width}
                         compositionHeight={height}
                         fps={preview.fps}
-                        controls
-                        autoPlay
+                        controls={!disableUI}
+                        autoPlay={autoPlay}
                         loop
                         style={{ width: "100%", height: "100%" }}
                         spaceKeyToPlayOrPause
@@ -467,10 +483,26 @@ export function LivePreview({
                     />
                 </ErrorBoundary>
             </div>
-
+            
+            <AutoPlayTracker playerRef={playerRef} autoPlay={autoPlay} />
             <FrameTracker playerRef={playerRef} onFrameChange={setCurrentFrame} />
         </div>
     );
+}
+
+// ============================================================
+// AutoPlay Tracker — plays/pauses based on prop
+// ============================================================
+function AutoPlayTracker({ playerRef, autoPlay }: { playerRef: React.RefObject<PlayerRef | null>, autoPlay: boolean }) {
+    useEffect(() => {
+        if (!playerRef.current) return;
+        if (autoPlay) {
+            playerRef.current.play();
+        } else {
+            playerRef.current.pause();
+        }
+    }, [autoPlay, playerRef]);
+    return null;
 }
 
 // ============================================================
