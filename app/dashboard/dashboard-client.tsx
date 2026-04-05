@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Filter, MoreVertical, Play, Clock, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -244,6 +244,17 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
     const updatedAt = formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true });
     const [imgError, setImgError] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
+    const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleMouseEnter = () => {
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = setTimeout(() => setIsHovered(true), 150);
+    };
+
+    const handleMouseLeave = () => {
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+        setIsHovered(false);
+    };
 
     const getStatusBadge = (status: string) => {
         switch (status.toLowerCase()) {
@@ -256,13 +267,56 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
         }
     };
 
+    const getResolutionDims = (res: string) => {
+        if (!res) return { width: 1080, height: 1920 };
+        const lower = res.toLowerCase();
+        if (lower.includes('x')) {
+            const [w, h] = lower.split('x').map(n => parseInt(n));
+            return { width: w || 1080, height: h || 1920 };
+        }
+        if (lower === '1080p') return { width: 1920, height: 1080 };
+        if (lower === '4k') return { width: 3840, height: 2160 };
+        return { width: 1080, height: 1920 };
+    };
+
+    const getCodeDims = (code?: string, fallbackRes?: string) => {
+        if (!code) return getResolutionDims(fallbackRes || "");
+        const widthMatch = code.match(/(?:width|widthInPixels|w)\s*[:=]\s*(\d+)/i);
+        const heightMatch = code.match(/(?:height|heightInPixels|h)\s*[:=]\s*(\d+)/i);
+        let w = widthMatch ? parseInt(widthMatch[1]) : 0;
+        let h = heightMatch ? parseInt(heightMatch[1]) : 0;
+        if (w > 0 && h > 0) return { width: w, height: h };
+        
+        // If "1080p" but no code config, assume vertical 1080x1920 since this is TSX Studio norm, 
+        // fallback otherwise.
+        if (fallbackRes?.toLowerCase() === '1080p') return { width: 1080, height: 1920 };
+        return getResolutionDims(fallbackRes || "");
+    };
+
+    const cleanCode = (raw?: string) => {
+        if (!raw) return "";
+        let c = raw.trim();
+        if (c.startsWith("```tsx")) c = c.slice(6);
+        else if (c.startsWith("```typescript")) c = c.slice(13);
+        else if (c.startsWith("```ts")) c = c.slice(5);
+        else if (c.startsWith("```javascript")) c = c.slice(13);
+        else if (c.startsWith("```js")) c = c.slice(5);
+        else if (c.startsWith("```")) c = c.slice(3);
+        
+        if (c.endsWith("```")) c = c.slice(0, -3);
+        return c.trim();
+    };
+
+    const actualCode = cleanCode(project.latestVersion?.code);
+    const dims = getCodeDims(actualCode, project.resolution);
+
     return (
         <Card 
-            className="group border-white/5 bg-card/30 backdrop-blur-xl hover:border-primary/20 transition-all duration-300 overflow-hidden rounded-3xl"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            className="group border-white/5 bg-card/30 backdrop-blur-xl hover:border-primary/20 transition-all duration-300 overflow-hidden rounded-3xl flex flex-col"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
         >
-            <div className="aspect-video bg-neutral-900 relative flex items-center justify-center group-hover:bg-neutral-800 transition-colors overflow-hidden">
+            <div className="bg-black relative flex items-center justify-center overflow-hidden w-full aspect-[4/3]">
                 {/* Fallback/Snapshot rendered independently so it stays underneath during compile delay */}
                 {project.thumbnailUrl && !imgError ? (
                     <img
@@ -276,11 +330,26 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
                         <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
                     </div>
                 )}
-                {isHovered && project.latestVersion?.code ? (
-                    <div className="absolute inset-0 pointer-events-none origin-center flex items-center justify-center mt-[-30px]" style={{ transform: "scale(0.32)" }}>
-                        <div style={{ width: 1080, height: 1920, position: 'relative' }}>
-                            <LivePreview code={project.latestVersion.code} isValid={true} width={1080} height={1920} fps={30} durationInFrames={300} disableUI={true} />
-                        </div>
+                {isHovered && actualCode ? (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/80 z-0 backdrop-blur-sm p-4">
+                        <div 
+                            className="relative flex items-center justify-center shadow-2xl rounded-md overflow-hidden bg-black"
+                            style={{ 
+                                aspectRatio: `${dims.width} / ${dims.height}`,
+                                height: dims.height >= dims.width ? '100%' : 'auto',
+                                width: dims.width > dims.height ? '100%' : 'auto'
+                            }}
+                        >
+                             <LivePreview 
+                                 code={actualCode} 
+                                 isValid={true} 
+                             width={dims.width} 
+                             height={dims.height} 
+                             fps={project.fps || 30} 
+                             durationInFrames={300} 
+                             disableUI={true}
+                             autoPlay={true}
+                         />
                     </div>
                 ) : null}
                 <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
@@ -304,7 +373,7 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
-                <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-2xl">
+                <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-all duration-300 shadow-2xl opacity-100 group-hover:opacity-0">
                     <Play className="w-7 h-7 text-primary fill-current ml-1" />
                 </div>
             </div>

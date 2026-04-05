@@ -36,6 +36,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { label: "Templates", href: "/templates", icon: Library },
     { label: "Transcribe", href: "/transcribe", icon: Mic },
     { label: "Marketplace", href: "/marketplace", icon: ShoppingBag },
     { label: "Exports", href: "/exports", icon: History },
