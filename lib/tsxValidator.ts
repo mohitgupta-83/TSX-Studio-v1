@@ -33,12 +33,16 @@ export function validateTsxCode(code: string): ValidationResult {
 
     // 2. Export Check
     if (!code.includes("export default")) {
+        const hasNamedExport = /export\s+(?:const|function)\s+\w+/.test(code);
+        
         errors.push({
             code: "missing-export",
-            severity: "error",
-            title: "Missing default export",
-            message: "Your code must have an 'export default' component for Remotion to render.",
-            hint: "Add 'export default function MyComponent() { ... }' to your main function.",
+            severity: hasNamedExport ? "warning" : "error",
+            title: hasNamedExport ? "No default export" : "Missing export",
+            message: hasNamedExport 
+                ? "Your code uses named exports. TSX Studio will try to render the last export automatically."
+                : "Your code must have an 'export' component for Remotion to render.",
+            hint: "Using 'export default function MyComponent() { ... }' is standard, but named exports also work.",
         });
     }
 

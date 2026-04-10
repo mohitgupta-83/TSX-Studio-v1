@@ -317,13 +317,19 @@ export function StudioClient({
 
     // Parse dimensions directly from code.
     const parseDimensions = (sourceCode: string) => {
-        const fps = 30; // Fixed output FPS
+        let fps = 30; // Default
+        const fpsMatch = sourceCode.match(/\b(?:export\s+const\s+)?fps\s*=\s*(\d+)/);
+        if (fpsMatch) fps = parseInt(fpsMatch[1]);
+
         const varMap: Record<string, number> = { fps };
         const declarations: Array<{ name: string; expr: string }> = [];
-        const declRegex = /(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)/g;
+        // Match both 'const x = ...' and 'prop: ...' (common in Remotion config objects)
+        const declRegex = /(?:(?:const|let|var)\s+(\w+)\s*=\s*|(\b\w+)\s*:\s*)([^;,}\n]+)/g;
         let m: RegExpExecArray | null;
         while ((m = declRegex.exec(sourceCode)) !== null) {
-            declarations.push({ name: m[1], expr: m[2].trim() });
+            const name = m[1] || m[2];
+            const expr = m[3].trim();
+            if (name && expr) declarations.push({ name, expr });
         }
         for (let pass = 0; pass < 5; pass++) {
             for (const { name, expr } of declarations) {
@@ -348,6 +354,16 @@ export function StudioClient({
             durationInFrames = varMap['durationInFrames'];
         } else if (varMap['durationInSeconds'] && varMap['durationInSeconds'] > 0) {
             durationInFrames = Math.round(varMap['durationInSeconds'] * fps);
+        } else {
+            // FALLBACK: Calculate from Sequences if no global duration is set!
+            const sequenceRegex = /<Sequence\s+[^>]*?from={?(\d+)}?[^>]*?durationInFrames={?(\d+)}?/g;
+            let maxFrame = 0;
+            let sm: RegExpExecArray | null;
+            while ((sm = sequenceRegex.exec(sourceCode)) !== null) {
+                const endFrame = parseInt(sm[1], 10) + parseInt(sm[2], 10);
+                if (endFrame > maxFrame) maxFrame = endFrame;
+            }
+            if (maxFrame > 0) durationInFrames = maxFrame;
         }
         return { width: 1080, height: 1920, fps, durationInFrames };
     };
@@ -377,9 +393,8 @@ export function StudioClient({
             const res = validateTsxCode(code);
             setValidationResult({ valid: res.ok, errors: res.errors });
             setIsValidating(false);
-            if (res.ok) {
-                setValidatedCode(code);
-            }
+            // Update validated code regardless of warnings (only block on errors)
+            setValidatedCode(code);
         }, 1000);
         return () => clearTimeout(timer);
     }, [code]);
@@ -457,8 +472,8 @@ export function StudioClient({
                         </Button>
                     )}
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-xs text-muted-foreground mr-2">
-                        {isValidating ? <Loader2 className="w-3 h-3 animate-spin text-primary" /> : (validationResult?.valid ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-destructive" />)}
-                        {isValidating ? "Updating..." : (validationResult?.valid ? "Preview Live" : "Errors Detected")}
+                        {isValidating ? <Loader2 className="w-3 h-3 animate-spin text-primary" /> : (!validationResult?.errors.some(e => e.severity === 'error') ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-destructive" />)}
+                        {isValidating ? "Updating..." : (!validationResult?.errors.some(e => e.severity === 'error') ? "Preview Live" : "Errors Detected")}
                     </div>
                     {!isReadOnly && (
                         <Button size="sm" onClick={handleSave} disabled={isSaving || !hasUnsavedChanges}>
@@ -508,13 +523,17 @@ export function StudioClient({
                                 <span className="text-sm font-medium">Building...</span>
                             </div>
                         ) : (validationResult?.valid) ? (
-                            <div className="w-full h-full relative group bg-black flex items-center justify-center p-4">
-                                <div className="relative bg-black rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/10"
+                            <div className="w-full h-full relative group flex items-center justify-center p-4 bg-[#0A0A0B]"
+                                 style={{ 
+                                     backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Crect width=\'10\' height=\'10\' fill=\'%231a1a1b\'/%3E%3Crect x=\'10\' y=\'10\' width=\'10\' height=\'10\' fill=\'%231a1a1b\'/%3E%3C/svg%3E")',
+                                     backgroundRepeat: 'repeat'
+                                 }}>
+                                <div className="relative rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/10"
                                      style={{ aspectRatio: dimensions.width + " / " + dimensions.height, maxWidth: '100%', maxHeight: '100%', width: dimensions.width > dimensions.height ? '100%' : 'auto', height: dimensions.height >= dimensions.width ? '100%' : 'auto' }}>
-                                    <LivePreview key={dimensions.width + "-" + dimensions.height + "-" + dimensions.durationInFrames} code={validatedCode} isValid={true} width={1080} height={1920} fps={30} durationInFrames={dimensions.durationInFrames} />
+                                    <LivePreview key={dimensions.width + "-" + dimensions.height + "-" + dimensions.durationInFrames} code={validatedCode} isValid={true} width={1080} height={1920} fps={dimensions.fps} durationInFrames={dimensions.durationInFrames} />
                                 </div>
                             </div>
-                        ) : validationResult && !validationResult.valid ? (
+                        ) : (validationResult && validationResult.errors.some(e => e.severity === 'error')) ? (
                             <div className="w-full max-w-lg p-8 rounded-[40px] bg-destructive/5 border border-destructive/20 text-center space-y-6">
                                 <AlertCircle className="w-10 h-10 text-destructive mx-auto" />
                                 <h3 className="text-3xl font-black italic uppercase text-destructive">Preview Blocked</h3>
@@ -535,8 +554,8 @@ export function StudioClient({
                         <TabsList className="w-full justify-start rounded-none h-10 bg-transparent border-b border-white/5 px-4 pt-1">
                             <TabsTrigger value="editor" className="text-[10px] uppercase font-bold tracking-wider data-[state=active]:bg-white/5 gap-2"><Code2 className="w-3 h-3" /> Editor</TabsTrigger>
                             <TabsTrigger value="presets" className="text-[10px] uppercase font-bold tracking-wider data-[state=active]:bg-white/5 gap-2"><Sparkles className="w-3 h-3" /> Claude Presets</TabsTrigger>
-                            {validationResult && !validationResult.valid && (
-                                <TabsTrigger value="fixes" className="text-[10px] uppercase font-bold tracking-wider data-[state=active]:bg-red-500/10 text-red-500">Fixes ({validationResult.errors.length})</TabsTrigger>
+                            {validationResult && validationResult.errors.some(e => e.severity === 'error') && (
+                                <TabsTrigger value="fixes" className="text-[10px] uppercase font-bold tracking-wider data-[state=active]:bg-red-500/10 text-red-500">Fixes ({validationResult.errors.filter(e => e.severity === 'error').length})</TabsTrigger>
                             )}
                             <TabsTrigger value="upload" className="text-[10px] uppercase font-bold tracking-wider data-[state=active]:bg-white/5">Upload</TabsTrigger>
                         </TabsList>

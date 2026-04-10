@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import * as Babel from "@babel/standalone";
 import * as Remotion from "remotion";
+import { z } from "zod";
 import { Player, PlayerRef } from "@remotion/player";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -115,12 +116,14 @@ export function LivePreview({
             else if (fpsProp) varMap['fps'] = parseInt(fpsProp[1], 10);
             else varMap['fps'] = defaultFps;
 
-            // Collect all variable declarations
+            // Collect all variable declarations and object properties (common in Remotion)
             const declarations: Array<{ name: string; expr: string }> = [];
-            const declRegex = /(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)/g;
+            const declRegex = /(?:(?:const|let|var)\s+(\w+)\s*=\s*|(\b\w+)\s*:\s*)([^;,}\n]+)/g;
             let m: RegExpExecArray | null;
             while ((m = declRegex.exec(src)) !== null) {
-                declarations.push({ name: m[1], expr: m[2].trim() });
+                const name = m[1] || m[2];
+                const expr = m[3].trim();
+                if (name && expr) declarations.push({ name, expr });
             }
 
             // Iteratively resolve using variable substitution + safe evaluation
@@ -152,6 +155,16 @@ export function LivePreview({
                 duration = varMap['durationInFrames'];
             } else if (varMap['durationInSeconds'] && varMap['durationInSeconds'] > 0) {
                 duration = Math.round(varMap['durationInSeconds'] * fps);
+            } else {
+                // FALLBACK: Calculate from Sequences (common in snippets without top-level config)
+                const sequenceRegex = /<Sequence\s+[^>]*?from={?(\d+)}?[^>]*?durationInFrames={?(\d+)}?/g;
+                let maxFrame = 0;
+                let sm: RegExpExecArray | null;
+                while ((sm = sequenceRegex.exec(src)) !== null) {
+                    const endFrame = parseInt(sm[1], 10) + parseInt(sm[2], 10);
+                    if (endFrame > maxFrame) maxFrame = endFrame;
+                }
+                if (maxFrame > 0) duration = maxFrame;
             }
 
             return { fps, duration };
@@ -223,9 +236,17 @@ export function LivePreview({
                         "__EXPORTED__ ="
                     );
                 }
+                // Pattern: fallback to the last named component export!
+                else {
+                    const namedExports = [...processedCode.matchAll(/export\s+(?:const|function)\s+(\w+)/g)];
+                    if (namedExports.length > 0) {
+                        const lastExportName = namedExports[namedExports.length - 1][1];
+                        processedCode += `\n__EXPORTED__ = ${lastExportName};`;
+                    }
+                }
 
-                // Remove remaining named exports
-                processedCode = processedCode.replace(/export\s+(?:const|let|var|function)/g, (match) => {
+                // Remove remaining named exports so Babel doesn't break trying to resolve 'export' in isolated blocks
+                processedCode = processedCode.replace(/export\s+(?:const|let|var|function|type|interface)/g, (match) => {
                     return match.replace("export ", "");
                 });
 
@@ -241,6 +262,7 @@ export function LivePreview({
                 const factory = new Function(
                     "React",
                     "Remotion",
+                    "Zod",
                     `
           var __EXPORTED__ = null;
           
@@ -261,6 +283,12 @@ export function LivePreview({
           var Audio = Remotion.Audio;
           var Video = Remotion.Video;
           var OffthreadVideo = Remotion.OffthreadVideo;
+
+          // Polyfill for Google Fonts (since we load them globally in the dashboard anyway)
+          var loadFont = function() { return { fontFamily: 'Inter' }; };
+
+          // Add Zod support (common in Remotion templates)
+          var z = Zod;
           
           // Unpack React into the scope
           var useState = React.useState;
@@ -275,7 +303,7 @@ export function LivePreview({
           `
                 );
 
-                const UserComponent = factory(React, Remotion);
+                const UserComponent = factory(React, Remotion, z);
 
                 if (!UserComponent) {
                     throw new Error(
@@ -410,10 +438,14 @@ export function LivePreview({
     // ============================================================
     return (
         <div
-            className={`w-full h-full relative group ${disableUI ? "bg-transparent" : "bg-black"}`}
+            className={`w-full h-full relative group ${disableUI ? "bg-transparent" : ""}`}
             style={{
                 display: "flex",
                 flexDirection: "column",
+                backgroundImage: disableUI ? 'none' : 'radial-gradient(circle, #222 1px, transparent 1px), radial-gradient(circle, #222 1px, transparent 1px)',
+                backgroundSize: '20px 20px',
+                backgroundPosition: '0 0, 10px 10px',
+                backgroundColor: disableUI ? 'transparent' : '#111',
                 ...FONT_SMOOTHING_STYLE,
             }}
         >

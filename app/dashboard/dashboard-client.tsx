@@ -184,7 +184,7 @@ export function DashboardClient({ projects: initialProjects, stats, userName, cr
             </div>
 
             {/* Projects Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="columns-1 md:columns-2 lg:columns-3 gap-8 space-y-8">
                 {filteredProjects.length === 0 && projects.length === 0 ? (
                     <div className="col-span-full border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center p-12 text-center bg-card/10">
                         <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4 border border-white/5">
@@ -206,7 +206,7 @@ export function DashboardClient({ projects: initialProjects, stats, userName, cr
                                 isDeleting={isDeleting === project.id}
                             />
                         ))}
-                        <div className="border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center p-8 text-center bg-card/10 hover:bg-card/20 transition-all cursor-pointer group min-h-[280px]">
+                        <div className="break-inside-avoid border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center p-8 text-center bg-card/10 hover:bg-card/20 transition-all cursor-pointer group min-h-[280px]">
                             <CreateProjectDialog onSuccess={handleProjectCreated}>
                                 <div className="flex flex-col items-center">
                                     <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform border border-white/5">
@@ -274,18 +274,18 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
             const [w, h] = lower.split('x').map(n => parseInt(n));
             return { width: w || 1080, height: h || 1920 };
         }
-        if (lower === '1080p') return { width: 1920, height: 1080 };
-        if (lower === '4k') return { width: 3840, height: 2160 };
+        if (lower === '1080p') return { width: 1080, height: 1920 }; // default tall
+        if (lower === '4k') return { width: 2160, height: 3840 };    // default tall
         return { width: 1080, height: 1920 };
     };
 
     const getCodeDims = (code?: string, fallbackRes?: string) => {
         if (!code) return getResolutionDims(fallbackRes || "");
-        const widthMatch = code.match(/(?:width|widthInPixels|w)\s*[:=]\s*(\d+)/i);
-        const heightMatch = code.match(/(?:height|heightInPixels|h)\s*[:=]\s*(\d+)/i);
+        const widthMatch = code.match(/\b(?:width|widthInPixels)\s*[:=]\s*(\d+)/i);
+        const heightMatch = code.match(/\b(?:height|heightInPixels)\s*[:=]\s*(\d+)/i);
         let w = widthMatch ? parseInt(widthMatch[1]) : 0;
         let h = heightMatch ? parseInt(heightMatch[1]) : 0;
-        if (w > 0 && h > 0) return { width: w, height: h };
+        if (w >= 100 && h >= 100) return { width: w, height: h };
         
         // If "1080p" but no code config, assume vertical 1080x1920 since this is TSX Studio norm, 
         // fallback otherwise.
@@ -312,91 +312,102 @@ function ProjectCard({ project, onDelete, isDeleting }: { project: Project, onDe
 
     return (
         <Card 
-            className="group border-white/5 bg-card/30 backdrop-blur-xl hover:border-primary/20 transition-all duration-300 overflow-hidden rounded-3xl flex flex-col"
+            className="group break-inside-avoid relative border border-white/5 bg-black hover:border-primary/20 transition-all duration-300 overflow-hidden rounded-3xl flex flex-col shadow-2xl"
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
+            style={{ aspectRatio: `${dims.width} / ${dims.height}` }}
         >
-            <div className="bg-black relative flex items-center justify-center overflow-hidden w-full aspect-[4/3]">
-                {/* Fallback/Snapshot rendered independently so it stays underneath during compile delay */}
-                {project.thumbnailUrl && !imgError ? (
-                    <img
-                        src={project.thumbnailUrl}
-                        alt={project.name}
-                        onError={() => setImgError(true)}
-                        className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
-                    />
-                ) : (
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-secondary/10 opacity-40 group-hover:opacity-60 transition-opacity">
-                        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
-                    </div>
-                )}
-                {isHovered && actualCode ? (
-                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/80 z-0 backdrop-blur-sm p-4">
-                        <div 
-                            className="relative flex items-center justify-center shadow-2xl rounded-md overflow-hidden bg-black"
-                            style={{ 
-                                aspectRatio: `${dims.width} / ${dims.height}`,
-                                height: dims.height >= dims.width ? '100%' : 'auto',
-                                width: dims.width > dims.height ? '100%' : 'auto'
-                            }}
-                        >
-                             <LivePreview 
-                                 code={actualCode} 
-                                 isValid={true} 
-                             width={dims.width} 
-                             height={dims.height} 
-                             fps={project.fps || 30} 
-                             durationInFrames={300} 
-                             disableUI={true}
-                             autoPlay={true}
-                         />
-                    </div>
-                ) : null}
-                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-black/40 rounded-full">
-                                <MoreVertical className="w-4 h-4 text-white" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-card/90 backdrop-blur-xl border-white/5">
-                            <DropdownMenuItem className="text-xs font-bold uppercase tracking-tight">Rename</DropdownMenuItem>
-                            <DropdownMenuItem className="text-xs font-bold uppercase tracking-tight">Duplicate</DropdownMenuItem>
-                            <DropdownMenuItem
-                                className="text-destructive text-xs font-bold uppercase tracking-tight"
-                                onClick={() => onDelete(project.id)}
-                                disabled={isDeleting}
-                            >
-                                <Trash2 className="w-3 h-3 mr-2" />
-                                {isDeleting ? "Deleting..." : "Delete"}
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+            {/* Background image & Live Preview wrapper */}
+            {project.thumbnailUrl && !imgError ? (
+                <img
+                    src={project.thumbnailUrl}
+                    alt={project.name}
+                    onError={() => setImgError(true)}
+                    className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700"
+                />
+            ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-secondary/10 opacity-40 group-hover:opacity-80 transition-opacity duration-700">
+                    <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
                 </div>
-                <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-all duration-300 shadow-2xl opacity-100 group-hover:opacity-0">
-                    <Play className="w-7 h-7 text-primary fill-current ml-1" />
+            )}
+
+            {isHovered && actualCode ? (
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/40 backdrop-blur-[2px] z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
+                     <LivePreview 
+                         code={actualCode} 
+                         isValid={true} 
+                         width={dims.width} 
+                         height={dims.height} 
+                         fps={project.fps || 30} 
+                         durationInFrames={300} 
+                         disableUI={true}
+                         autoPlay={true}
+                     />
+                </div>
+            ) : null}
+            
+            {/* Dark overlay at bottom so text is readable */}
+            <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none z-10 transition-opacity duration-500 opacity-80 group-hover:opacity-100" />
+            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10 transition-opacity duration-500 opacity-40 group-hover:opacity-80" />
+
+            {/* Play overlay button (centered) */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center group-hover:scale-125 group-hover:bg-primary/20 transition-all duration-500 shadow-2xl opacity-100 group-hover:opacity-0 transform">
+                    <Play className="w-8 h-8 text-white group-hover:text-primary fill-current ml-1 transition-colors" />
                 </div>
             </div>
-            <CardHeader className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                    <CardTitle className="text-xl font-bold italic tracking-tight">{project.name}</CardTitle>
+
+            {/* Top Menu Dropdown */}
+            <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-black/60 backdrop-blur rounded-full border border-white/5">
+                            <MoreVertical className="w-4 h-4 text-white" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-card/90 backdrop-blur-xl border-white/5">
+                        <DropdownMenuItem className="text-xs font-bold uppercase tracking-tight">Rename</DropdownMenuItem>
+                        <DropdownMenuItem className="text-xs font-bold uppercase tracking-tight">Duplicate</DropdownMenuItem>
+                        <DropdownMenuItem
+                            className="text-destructive text-xs font-bold uppercase tracking-tight"
+                            onClick={() => onDelete(project.id)}
+                            disabled={isDeleting}
+                        >
+                            <Trash2 className="w-3 h-3 mr-2" />
+                            {isDeleting ? "Deleting..." : "Delete"}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+
+            {/* Content Overlay */}
+            <div className="absolute inset-0 z-20 flex flex-col justify-between p-6 cursor-pointer" onClick={() => window.location.href = `/studio/${project.id}`}>
+                {/* Header: Status Badge Only */}
+                <div className="flex items-start justify-between">
                     {getStatusBadge(project.status)}
                 </div>
-                <CardDescription className="flex items-center gap-2 text-xs font-medium">
-                    <Clock className="w-3 h-3" /> Updated {updatedAt}
-                </CardDescription>
-            </CardHeader>
-            <CardFooter className="px-6 pb-6 pt-0 flex items-center justify-between">
-                <div className="flex gap-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    <span>{project.resolution}</span>
-                    <span>{project.fps} FPS</span>
+
+                {/* Footer: Title, Info, Button */}
+                <div className="flex flex-col gap-3 mt-auto transform translate-y-2 group-hover:translate-y-0 transition-transform duration-500">
+                    <div>
+                        <h3 className="text-2xl font-black italic tracking-tighter text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] line-clamp-1">{project.name}</h3>
+                        <p className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-white/70 mt-1 drop-shadow-md">
+                            <Clock className="w-3 h-3" /> Updated {updatedAt}
+                        </p>
+                    </div>
+                    
+                    <div className="flex items-center justify-between opacity-80 group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-3 text-[10px] font-black uppercase tracking-widest text-[#27F2FF] drop-shadow-[0_0_8px_rgba(39,242,255,0.4)]">
+                            <span className="bg-black/40 px-2 py-1 rounded backdrop-blur border border-white/5">{project.resolution}</span>
+                            <span className="bg-black/40 px-2 py-1 rounded backdrop-blur border border-white/5">{project.fps} FPS</span>
+                        </div>
+                        
+                        <Button size="sm" className="h-9 px-5 bg-white text-black hover:bg-[#27f2ff] hover:text-black rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(0,0,0,0.5)] group-hover:shadow-[0_0_20px_rgba(39,242,255,0.3)]">
+                            Open Studio
+                        </Button>
+                    </div>
                 </div>
-                <Link href={`/studio/${project.id}`}>
-                    <Button size="sm" variant="outline" className="h-9 px-4 border-white/10 hover:border-primary hover:text-primary rounded-xl font-bold transition-all">
-                        Open Studio
-                    </Button>
-                </Link>
-            </CardFooter>
+            </div>
         </Card>
     );
 }
