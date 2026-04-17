@@ -38,12 +38,18 @@ export async function transcribeWithWhisper(audioPath: string, options: WhisperO
     ];
 
     if (language && language !== 'auto') {
-        commandArgs.push('--language', language);
-        if (scriptMode === 'Romanized' || language === 'hinglish') {
+        let finalLanguage = language;
+        if (scriptMode === 'Romanized' || scriptMode === 'Mixed' || language === 'hinglish') {
+            // Must force 'en' language track to get Latin characters from Whisper for Hindi audio
+            finalLanguage = 'en';
             commandArgs.push('--initial_prompt', 'Transcribe exactly in Romanized Hindi / Hinglish. Use the English alphabet only. Do NOT use Devanagari script. Maintain the Hindi meaning.');
         } else if (language === 'hi') {
+            finalLanguage = 'hi';
             commandArgs.push('--initial_prompt', 'नमस्ते, आप कैसे हैं? यह हिंदी देवनागरी लिपि है।');
         }
+
+        if (finalLanguage === 'hinglish') finalLanguage = 'hi';
+        commandArgs.push('--language', finalLanguage);
     }
 
     return new Promise((resolve, reject) => {

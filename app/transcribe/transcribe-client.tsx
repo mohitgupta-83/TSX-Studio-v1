@@ -274,8 +274,13 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                         return updated;
                     });
 
+                    const actualJson = parsed.json ? parsed.json : parsed;
+                    const cleanJsonData = { ...actualJson };
+                    delete cleanJsonData.srt;
+                    delete cleanJsonData.txt;
+
                     setTranscript({
-                        json: parsed.json || parsed,
+                        json: cleanJsonData,
                         srt: parsed.srt || "",
                         txt: parsed.txt || ""
                     });
@@ -342,13 +347,57 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 };
 
                 setJobs(prev => {
+        }
+
+        setIsUploading(true);
+        try {
+            const filePath = (selectedFile as any).path;
+            if (!filePath) {
+                console.error("File object missing path property:", selectedFile);
+                throw new Error("File path not found. Please drag and drop the file again.");
+            }
+
+            console.log("Starting transcription for:", filePath);
+            setActiveJobId("local-job");
+
+            // Call Electron API
+            const result = await (window as any).electronAPI.transcribeMedia({
+                filePath,
+                model: selectedModel, script: selectedScript,
+                language: selectedLanguage
+            });
+
+            console.log("TRANSCRIBE RESPONSE:", result);
+
+            if (result.success) {
+                const parsed = JSON.parse(result.transcription);
+                console.log("PARSED TRANSCRIPTION KEYS:", Object.keys(parsed));
+                console.log("JSON segments:", parsed.segments?.length || 0);
+                console.log("SRT length:", (parsed.srt || "").length);
+                console.log("TXT length:", (parsed.txt || "").length);
+                
+                const newJob: TranscriptionJob = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    status: "DONE",
+                    model: selectedModel,
+                    fileName: selectedFile.name,
+                    durationSeconds: parsed.duration || 0,
+                    errorMessage: null,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    hasOutput: true,
+                    transcriptionOutput: result.transcription // Save the content
+                };
+
+                setJobs(prev => {
                     const updated = [newJob, ...prev];
                     localStorage.setItem("tsx-studio-jobs", JSON.stringify(updated));
                     return updated;
                 });
                 
+                const actualJson = parsed.json ? parsed.json : parsed;
                 // Separate srt/txt from the clean JSON object
-                const cleanJsonData = { ...parsed };
+                const cleanJsonData = { ...actualJson };
                 delete cleanJsonData.srt;
                 delete cleanJsonData.txt;
 
@@ -788,106 +837,6 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                         <SelectItem value="hinglish" className="text-orange-400">Hinglish</SelectItem>
                                         <SelectItem value="ta" className="text-orange-400">Tamil (Indian)</SelectItem>
                                         <SelectItem value="te" className="text-orange-400">Telugu (Indian)</SelectItem>
-                                        <SelectItem value="bn" className="text-orange-400">Bengali (Indian)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {selectedLanguage === "hinglish" && (
-                                    <p className="text-[10px] text-primary mt-1 px-1 font-medium animate-in fade-in slide-in-from-top-1">
-                                        Best for mixed Hindi + English speech. Brand names stay in English.
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="col-span-2 sm:col-span-1">
-                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
-                                    Script Output
-                                </label>
-                                <Select value={selectedScript} onValueChange={setSelectedScript}>
-                                    <SelectTrigger className="bg-card/50 border-white/10 h-12">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
-                                        <SelectItem value="Auto">Default</SelectItem>
-                                        <SelectItem value="Hindi">Hindi (Devanagari)</SelectItem>
-                                        <SelectItem value="Mixed">Mixed (Hindi + English Script)</SelectItem>
-                                        <SelectItem value="Romanized">Romanized Hindi (English Letters)</SelectItem>
-                                        <SelectItem value="Urdu">Urdu (Arabic)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="col-span-2 sm:col-span-1 flex items-end">
-                                <Button
-                                    onClick={handleUpload}
-                                    disabled={!selectedFile || isUploading || !!activeJobId}
-                                    className="h-12 w-full rounded-xl font-black italic uppercase text-xs tracking-widest shadow-lg shadow-primary/20"
-                                >
-                                    {isUploading ? (
-                                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading</>
-                                    ) : activeJobId ? (
-                                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing</>
-                                    ) : (
-                                        <><Mic className="w-4 h-4 mr-2" /> Transcribe</>
-                                    )}
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Job History */}
-                        <div className="space-y-4">
-                            <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                Recent Transcriptions
-                            </h3>
-
-                            {jobs.length === 0 ? (
-                                <div className="text-center py-12 text-muted-foreground">
-                                    <FileJson2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                                    <p>No transcriptions yet</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-2">
-                                    {jobs.map(job => (
-                                        <div
-                                            key={job.id}
-                                            className="flex items-center gap-4 p-4 rounded-2xl bg-card/30 border border-white/5 hover:border-white/10 transition-all group"
-                                        >
-                                            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
-                                                <FileAudio className="w-5 h-5 text-muted-foreground" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-medium truncate">{job.fileName}</p>
-                                                <p className="text-xs text-muted-foreground">
-                                                    {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {getStatusBadge(job)}
-                                                {job.hasOutput && (
-                                                    <>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 opacity-0 group-hover:opacity-100"
-                                                            onClick={() => {
-                                                                try {
-                                                                    const parsedResult = JSON.parse(job.transcriptionOutput || "{}");
-                                                                    if (parsedResult.error) {
-                                                                        toast.error("No content saved for this job");
-                                                                        return;
-                                                                    }
-                                                                    setTranscript({
-                                                                        json: parsedResult,
-                                                                        srt: parsedResult.srt || "",
-                                                                        txt: parsedResult.txt || ""
-                                                                    });
-                                                                    setActiveTab("json");
-                                                                } catch(e) { 
-                                                                    toast.error("Could not parse legacy job data");
-                                                                }
-                                                            }}
-                                                        >
-                                                            <Play className="w-4 h-4" />
-                                                        </Button>
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"

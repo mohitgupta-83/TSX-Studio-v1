@@ -18,14 +18,24 @@ export async function POST(req: Request) {
     groqFormData.append('temperature', '0');
     groqFormData.append('response_format', 'verbose_json');
     
-    if (language && language !== 'auto') {
-      groqFormData.append('language', language);
+    const script = formData.get('script') as string;
+    let finalLanguage = language !== 'auto' ? language : undefined;
+
+    if (script === 'Romanized' || script === 'Mixed') {
+        finalLanguage = 'en'; // Force English for Romanized so we get latin letters
+    } else if (language === 'hinglish') {
+        if (script === 'Hindi') finalLanguage = 'hi';
+        else finalLanguage = 'en';
+    } 
+
+    if (finalLanguage) {
+        if (finalLanguage === 'hinglish') finalLanguage = 'hi';
+        groqFormData.append('language', finalLanguage);
     }
     
-    const script = formData.get('script') as string;
-    if (script === 'Romanized' || language === 'hinglish') {
+    if (script === 'Romanized' || (language === 'hinglish' && script !== 'Hindi')) {
         groqFormData.append('prompt', 'Transcribe exactly in Romanized Hindi / Hinglish. Use the English alphabet only. Do NOT use Devanagari script. Maintain the Hindi meaning.');
-    } else if (script === 'Hindi') {
+    } else if (script === 'Hindi' || language === 'hi') {
         groqFormData.append('prompt', 'Transcribe in pure Hindi Devanagari script.');
     }
 
