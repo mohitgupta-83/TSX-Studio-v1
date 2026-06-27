@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Sparkles, UserPlus } from "lucide-react";
+import { Sparkles, UserPlus, Terminal } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -123,6 +123,19 @@ export default function SignupPage() {
                                         <GoogleIcon />
                                     </div>
                                     <span className="text-white tracking-tight">Create your account with Google</span>
+                                </Button>
+
+                                {/* DEV LOGIN BUTTON */}
+                                <Button
+                                    onClick={() => {
+                                        setIsLoading(true);
+                                        signIn("credentials", { email: "dev@tsx.studio", callbackUrl: "/dashboard" });
+                                    }}
+                                    disabled={isLoading}
+                                    className="w-full h-12 bg-purple-500/10 border border-purple-500/20 hover:border-purple-500/50 hover:bg-purple-500/20 rounded-full font-bold text-sm transition-all duration-300 active:scale-[0.98] flex items-center justify-center text-purple-400 hover:text-purple-300"
+                                >
+                                    <Terminal className="w-4 h-4 mr-2" />
+                                    <span>One-Click Dev Login (Testing Phase)</span>
                                 </Button>
 
                                 <p className="text-[9px] text-center text-muted-foreground font-medium uppercase tracking-widest opacity-40">

@@ -22,7 +22,9 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
 
   // The single source of truth for the desktop application
-  const sigmaUrl = "https://tsx-studio-v1-sigma.vercel.app/";
+  const sigmaUrl = app.isPackaged 
+    ? "https://tsx-studio-v1-sigma.vercel.app/"
+    : "http://localhost:3000/";
 
   console.log("Loading High-End Studio Environment:", sigmaUrl);
   mainWindow.loadURL(sigmaUrl);

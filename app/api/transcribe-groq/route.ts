@@ -1,20 +1,27 @@
 import { NextResponse } from 'next/server';
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "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";
+const DEFAULT_GROQ_API_KEY = "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";
 
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const language = formData.get('language') as string;
+    const customApiKey = formData.get('groqApiKey') as string;
+
+    const apiKey = (customApiKey && customApiKey.trim()) || process.env.GROQ_API_KEY || DEFAULT_GROQ_API_KEY;
 
     if (!file) {
       return NextResponse.json({ error: 'No audio file provided' }, { status: 400 });
     }
 
+    const complexLanguages = ["hi", "hinglish", "mr", "ta", "te", "bn", "ur", "ml", "kn", "gu", "pa", "or", "as"];
+    const isComplex = complexLanguages.includes(language);
+    const chosenModel = isComplex ? 'whisper-large-v3-turbo' : 'whisper-large-v3';
+
     const groqFormData = new FormData();
     groqFormData.append('file', file, file.name || 'audio.mp4');
-    groqFormData.append('model', 'whisper-large-v3');
+    groqFormData.append('model', chosenModel);
     groqFormData.append('temperature', '0');
     groqFormData.append('response_format', 'verbose_json');
     
@@ -34,7 +41,7 @@ export async function POST(req: Request) {
     }
     
     if (script === 'Romanized' || (language === 'hinglish' && script !== 'Hindi')) {
-        groqFormData.append('prompt', 'Transcribe exactly in Romanized Hindi / Hinglish. Use the English alphabet only. Do NOT use Devanagari script. Maintain the Hindi meaning.');
+        groqFormData.append('prompt', 'kya chal raha hai? main theek hoon. aap kaise ho? acha, thik hai, bahut badhiya. Transcribe exactly in Romanized Hindi (Hinglish) using Latin/English characters only. Do NOT use Devanagari script (like क्या, है, ठीक). Keep the Hindi pronunciation and spelling in English script. Do NOT translate to English.');
     } else if (script === 'Hindi' || language === 'hi') {
         groqFormData.append('prompt', 'Transcribe in pure Hindi Devanagari script.');
     }
@@ -43,7 +50,7 @@ export async function POST(req: Request) {
     const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`
+        'Authorization': `Bearer ${apiKey}`
       },
       body: groqFormData as any
     });
@@ -63,7 +70,12 @@ export async function POST(req: Request) {
       segments: data.segments ? data.segments.map((s: any) => ({
         start: s.start,
         end: s.end,
-        text: s.text.trim()
+        text: s.text.trim(),
+        words: s.words ? s.words.map((w: any) => ({
+          word: w.word,
+          start: w.start,
+          end: w.end
+        })) : []
       })) : []
     };
 
@@ -82,17 +94,22 @@ export async function POST(req: Request) {
                 if (chunkWords.length === 0) continue;
                 const chunkStart = seg.start + (i * (duration / numChunks));
                 const chunkEnd = (i === numChunks - 1) ? seg.end : seg.start + ((i + 1) * (duration / numChunks));
+                
+                const segmentWordsList = seg.words ? seg.words.slice(i * wordsPerChunk, (i + 1) * wordsPerChunk) : [];
+                
                 finalSegments.push({
                     start: Number(chunkStart.toFixed(2)),
                     end: Number(chunkEnd.toFixed(2)),
-                    text: chunkWords.join(' ')
+                    text: chunkWords.join(' '),
+                    words: segmentWordsList
                 });
             }
         } else {
             finalSegments.push({
                 start: Number(seg.start.toFixed(2)),
                 end: Number(seg.end.toFixed(2)),
-                text: seg.text
+                text: seg.text,
+                words: seg.words || []
             });
         }
     });

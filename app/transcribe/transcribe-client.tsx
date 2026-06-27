@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
     Upload,
@@ -19,6 +19,7 @@ import {
     Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
     Select,
@@ -48,6 +49,93 @@ interface TranscribeClientProps {
     initialJobs: TranscriptionJob[];
 }
 
+function transliterateDevanagari(text: string): string {
+    const vowels: Record<string, string> = {
+        'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo', 'ऋ': 'ri',
+        'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'अं': 'an', 'अः': 'ah'
+    };
+    const matras: Record<string, string> = {
+        'ा': 'aa', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo', 'ृ': 'ri',
+        'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ं': 'n', 'ः': 'h', 'ँ': 'n',
+        'ॉ': 'o', 'ोः': 'oh'
+    };
+    const consonants: Record<string, string> = {
+        'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'n',
+        'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'n',
+        'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+        'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n',
+        'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
+        'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 'sh', 'ष': 'sh', 'स': 's', 'ह': 'h',
+        'क्ष': 'ksh', 'त्र': 'tr', 'ज्ञ': 'gy',
+        'ड़': 'r', 'ढ़': 'rh', 'फ़': 'f', 'ज़': 'z', 'क़': 'q', 'ख़': 'kh', 'ग़': 'g'
+    };
+
+    let result = '';
+    let i = 0;
+    while (i < text.length) {
+        const char = text[i];
+        
+        if (char === '।') {
+            result += '.';
+            i += 1;
+            continue;
+        }
+
+        // Handle double-character consonants (with nukta like ड़, ढ़, फ़, ज़, क़, ख़, ग़)
+        if (i + 1 < text.length && text[i + 1] === '़') {
+            const composite = char + '़';
+            const baseCons = consonants[composite];
+            if (baseCons) {
+                let nextChar = (i + 2 < text.length) ? text[i + 2] : '';
+                if (nextChar === '्') {
+                    // Suppressed vowel
+                    result += baseCons;
+                    i += 3;
+                } else if (matras[nextChar]) {
+                    // With a matra
+                    result += baseCons + matras[nextChar];
+                    i += 3;
+                } else {
+                    // Inherent vowel 'a'
+                    const isEndOrWordBreak = !nextChar || /\s|[.,!?;:'"()[\]{}]/.test(nextChar);
+                    result += baseCons + (isEndOrWordBreak ? '' : 'a');
+                    i += 2;
+                }
+                continue;
+            }
+        }
+
+        if (consonants[char]) {
+            const baseCons = consonants[char];
+            let nextChar = (i + 1 < text.length) ? text[i + 1] : '';
+            if (nextChar === '्') {
+                // Suppressed vowel
+                result += baseCons;
+                i += 2;
+            } else if (matras[nextChar]) {
+                // With a matra
+                result += baseCons + matras[nextChar];
+                i += 2;
+            } else {
+                // Inherent vowel 'a'
+                const isEndOrWordBreak = !nextChar || /\s|[.,!?;:'"()[\]{}]/.test(nextChar);
+                result += baseCons + (isEndOrWordBreak ? '' : 'a');
+                i += 1;
+            }
+        } else if (vowels[char]) {
+            result += vowels[char];
+            i += 1;
+        } else if (matras[char]) {
+            result += matras[char];
+            i += 1;
+        } else {
+            result += char;
+            i += 1;
+        }
+    }
+    return result;
+}
+
 const MODELS = [
     { value: "tiny", label: "Tiny", desc: "~75MB, Fastest" },
     { value: "base", label: "Base", desc: "~150MB, Balanced" },
@@ -66,7 +154,9 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     const [selectedScript, setSelectedScript] = useState("Auto");
     const [isUploading, setIsUploading] = useState(false);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
-    const [transcript, setTranscript] = useState<any>({ json: null, srt: "", txt: "" });
+    const [rawTranscript, setRawTranscript] = useState<any>(null);
+    const [resegmentWords, setResegmentWords] = useState<number>(0);
+    const [capitalization, setCapitalization] = useState<"original" | "sentence" | "segment" | "uppercase" | "word">("original");
     const [activeTab, setActiveTab] = useState("json");
     const [isDragOver, setIsDragOver] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState(CLAUDE_PRESETS[0].id);
@@ -77,6 +167,156 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
     const [transcriptionMode, setTranscriptionMode] = useState<"cloud" | "local">("cloud");
     const [mainTab, setMainTab] = useState<"upload" | "import">("upload");
     const [importText, setImportText] = useState("");
+    const [groqApiKey, setGroqApiKey] = useState("");
+
+    const handleApiKeyChange = (val: string) => {
+        setGroqApiKey(val);
+        if (typeof window !== "undefined") {
+            localStorage.setItem("tsx-studio-groq-key", val);
+        }
+    };
+
+    const transcript = useMemo(() => {
+        if (!rawTranscript) return null;
+
+        const actualJson = rawTranscript.json ? rawTranscript.json : rawTranscript;
+        if (!actualJson || !actualJson.segments) {
+            return { json: actualJson, srt: rawTranscript.srt || "", txt: rawTranscript.txt || "" };
+        }
+
+        const shouldTransliterate = selectedScript === "Romanized" || selectedLanguage === "hinglish";
+
+        // 1. Extract all words from original segments
+        let wordsList: Array<{ word: string; start: number; end: number }> = [];
+        actualJson.segments.forEach((seg: any) => {
+            const segText = shouldTransliterate ? transliterateDevanagari(seg.text) : seg.text;
+            if (seg.words && seg.words.length > 0) {
+                wordsList.push(...seg.words.map((w: any) => ({
+                    word: shouldTransliterate ? transliterateDevanagari(w.word.trim()) : w.word.trim(),
+                    start: w.start,
+                    end: w.end
+                })));
+            } else {
+                // Fallback: split by space and distribute time evenly
+                const words = segText.split(/\s+/).filter(Boolean);
+                const count = words.length;
+                const duration = seg.end - seg.start;
+                words.forEach((w: string, idx: number) => {
+                    wordsList.push({
+                        word: w,
+                        start: seg.start + (idx / count) * duration,
+                        end: seg.start + ((idx + 1) / count) * duration
+                    });
+                });
+            }
+        });
+
+        // 2. Resegment if requested
+        let processedSegments: any[] = [];
+        if (resegmentWords > 0) {
+            for (let i = 0; i < wordsList.length; i += resegmentWords) {
+                const chunk = wordsList.slice(i, i + resegmentWords);
+                if (chunk.length === 0) continue;
+                processedSegments.push({
+                    start: chunk[0].start,
+                    end: chunk[chunk.length - 1].end,
+                    text: chunk.map(w => w.word).join(" "),
+                    words: chunk
+                });
+            }
+        } else {
+            // Use original segments, but clone them to avoid mutations
+            processedSegments = actualJson.segments.map((seg: any) => ({
+                ...seg,
+                text: shouldTransliterate ? transliterateDevanagari(seg.text) : seg.text,
+                words: (seg.words || []).map((w: any) => ({
+                    ...w,
+                    word: shouldTransliterate ? transliterateDevanagari(w.word) : w.word
+                }))
+            }));
+        }
+
+        // Helper function to capitalize a string based on rules
+        const capitalizeText = (text: string) => {
+            if (capitalization === "uppercase") {
+                return text.toUpperCase();
+            }
+            if (capitalization === "word") {
+                return text.replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+            }
+            if (capitalization === "segment") {
+                const trimmed = text.trimStart();
+                if (trimmed.length > 0) {
+                    const leadingSpaces = text.slice(0, text.length - trimmed.length);
+                    return leadingSpaces + trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+                }
+                return text;
+            }
+            if (capitalization === "sentence") {
+                // Capitalize first letter of each sentence
+                return text.replace(/(^\s*|[.!?]\s+)([a-z\u00C0-\u00FF])/gi, (m, p1, p2) => p1 + p2.toUpperCase());
+            }
+            return text; // original
+        };
+
+        // 3. Process text capitalization
+        const finalSegments = processedSegments.map((seg, idx) => {
+            let text = seg.text;
+            
+            // Apply capitalization rules
+            text = capitalizeText(text);
+
+            // If we have words, we should also update the word list capitalization
+            const finalWords = seg.words ? seg.words.map((w: any) => {
+                let capitalizedWord = w.word;
+                if (capitalization === "uppercase") {
+                    capitalizedWord = w.word.toUpperCase();
+                } else if (capitalization === "word") {
+                    capitalizedWord = w.word.charAt(0).toUpperCase() + w.word.slice(1);
+                }
+                return {
+                    ...w,
+                    word: capitalizedWord
+                };
+            }) : [];
+
+            return {
+                id: idx + 1,
+                start: Number(seg.start.toFixed(2)),
+                end: Number(seg.end.toFixed(2)),
+                text,
+                words: finalWords
+            };
+        });
+
+        const jsonOutput = {
+            language: actualJson.language || "en",
+            duration: actualJson.duration || (finalSegments.length > 0 ? finalSegments[finalSegments.length - 1].end : 0),
+            segments: finalSegments
+        };
+
+        // Generate TXT format
+        const txtOutput = finalSegments.map(s => s.text).join(' ');
+
+        // Generate SRT format
+        const formatSrtTime = (seconds: number) => {
+            const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
+            const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+            const ss = String(Math.floor(seconds % 60)).padStart(2, '0');
+            const ms = String(Math.floor((seconds * 1000) % 1000)).padStart(3, '0');
+            return `${hh}:${mm}:${ss},${ms}`;
+        };
+        
+        const srtOutput = finalSegments.map((s, i) => {
+            return `${i + 1}\n${formatSrtTime(s.start)} --> ${formatSrtTime(s.end)}\n${s.text}\n`;
+        }).join('\n');
+
+        return {
+            json: jsonOutput,
+            srt: srtOutput.trim(),
+            txt: txtOutput.trim()
+        };
+    }, [rawTranscript, resegmentWords, capitalization, selectedScript, selectedLanguage]);
 
     // Electron Progress Listener
     useEffect(() => {
@@ -119,6 +359,10 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
             } catch (e) {
                 console.error("Failed to parse jobs", e);
             }
+        }
+        const savedKey = localStorage.getItem("tsx-studio-groq-key");
+        if (savedKey) {
+            setGroqApiKey(savedKey);
         }
     }, []);
 
@@ -208,7 +452,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 segments: parsedSegments
             };
 
-            setTranscript({
+            setRawTranscript({
                 json: cleanJsonData,
                 srt: isSrt ? importText : "",
                 txt: !isSrt ? importText : ""
@@ -226,13 +470,6 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
         if (!selectedFile) return;
 
         if (transcriptionMode === "cloud") {
-            const indianLangs = ["hi", "hinglish", "ta", "te", "bn"];
-            if (indianLangs.includes(selectedLanguage)) {
-                toast.info("Indian languages works best on Desktop.");
-                router.push("/transcribe-india");
-                return;
-            }
-
             setIsUploading(true);
             setActiveJobId("cloud-job");
             setLastLog("Uploading to Cloud...");
@@ -242,6 +479,9 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 formData.append("file", selectedFile);
                 formData.append("language", selectedLanguage);
                 formData.append("script", selectedScript);
+                if (groqApiKey) {
+                    formData.append("groqApiKey", groqApiKey);
+                }
 
                 const response = await fetch("/api/transcribe-groq", {
                     method: "POST",
@@ -255,12 +495,14 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 const result = await response.json();
                 if (result.success) {
                     const parsed = JSON.parse(result.transcription);
+                    const isComplex = ["hi", "hinglish", "mr", "ta", "te", "bn", "ur", "ml", "kn", "gu", "pa", "or", "as"].includes(selectedLanguage);
+                    const chosenModel = isComplex ? 'whisper-large-v3-turbo' : 'whisper-large-v3';
                     const newJob = {
                         id: Math.random().toString(36).substr(2, 9),
                         status: "DONE",
-                        model: "whisper-large-v3",
+                        model: chosenModel,
                         fileName: selectedFile.name,
-                        durationSeconds: parsed.json?.duration || 0,
+                        durationSeconds: parsed.json?.duration || parsed.duration || 0,
                         errorMessage: null,
                         createdAt: new Date().toISOString(),
                         updatedAt: new Date().toISOString(),
@@ -274,16 +516,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                         return updated;
                     });
 
-                    const actualJson = parsed.json ? parsed.json : parsed;
-                    const cleanJsonData = { ...actualJson };
-                    delete cleanJsonData.srt;
-                    delete cleanJsonData.txt;
-
-                    setTranscript({
-                        json: cleanJsonData,
-                        srt: parsed.srt || "",
-                        txt: parsed.txt || ""
-                    });
+                    setRawTranscript(parsed);
                     setActiveTab("json");
                     toast.success("Cloud Transcription Complete!");
                     setSelectedFile(null);
@@ -347,61 +580,17 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                 };
 
                 setJobs(prev => {
-        }
-
-        setIsUploading(true);
-        try {
-            const filePath = (selectedFile as any).path;
-            if (!filePath) {
-                console.error("File object missing path property:", selectedFile);
-                throw new Error("File path not found. Please drag and drop the file again.");
-            }
-
-            console.log("Starting transcription for:", filePath);
-            setActiveJobId("local-job");
-
-            // Call Electron API
-            const result = await (window as any).electronAPI.transcribeMedia({
-                filePath,
-                model: selectedModel, script: selectedScript,
-                language: selectedLanguage
-            });
-
-            console.log("TRANSCRIBE RESPONSE:", result);
-
-            if (result.success) {
-                const parsed = JSON.parse(result.transcription);
-                console.log("PARSED TRANSCRIPTION KEYS:", Object.keys(parsed));
-                console.log("JSON segments:", parsed.segments?.length || 0);
-                console.log("SRT length:", (parsed.srt || "").length);
-                console.log("TXT length:", (parsed.txt || "").length);
-                
-                const newJob: TranscriptionJob = {
-                    id: Math.random().toString(36).substr(2, 9),
-                    status: "DONE",
-                    model: selectedModel,
-                    fileName: selectedFile.name,
-                    durationSeconds: parsed.duration || 0,
-                    errorMessage: null,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    hasOutput: true,
-                    transcriptionOutput: result.transcription // Save the content
-                };
-
-                setJobs(prev => {
                     const updated = [newJob, ...prev];
                     localStorage.setItem("tsx-studio-jobs", JSON.stringify(updated));
                     return updated;
                 });
                 
-                const actualJson = parsed.json ? parsed.json : parsed;
                 // Separate srt/txt from the clean JSON object
-                const cleanJsonData = { ...actualJson };
+                const cleanJsonData = { ...parsed };
                 delete cleanJsonData.srt;
                 delete cleanJsonData.txt;
 
-                setTranscript({
+                setRawTranscript({
                     json: cleanJsonData,
                     srt: parsed.srt || "",
                     txt: parsed.txt || ""
@@ -520,7 +709,7 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
             localStorage.setItem("tsx-studio-jobs", JSON.stringify(updated));
             return updated;
         });
-        if (transcript) setTranscript(null);
+        if (rawTranscript) setRawTranscript(null);
         toast.success("Job removed from history");
     };
 
@@ -798,6 +987,23 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                     >Local (Desktop)</button>
                                 </div>
                             </div>
+                            {transcriptionMode === "cloud" && (
+                                <div className="col-span-2 border-t border-white/5 pt-4 mt-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
+                                        Groq API Key (Optional Override)
+                                    </label>
+                                    <Input
+                                        type="password"
+                                        value={groqApiKey}
+                                        onChange={(e) => handleApiKeyChange(e.target.value)}
+                                        placeholder="gsk_..."
+                                        className="bg-card/50 border-white/10 h-12 text-white"
+                                    />
+                                    <p className="text-[10px] text-muted-foreground mt-1">
+                                        Enter your own Groq API Key if the default system key is rate-limited or invalid.
+                                    </p>
+                                </div>
+                            )}
                             <div className="col-span-2 sm:col-span-1 border-t border-white/5 pt-4 mt-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
                                     Whisper Model
@@ -835,8 +1041,114 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
                                         <SelectItem value="de" className="text-primary/70">German</SelectItem>
                                         <SelectItem value="hi" className="font-bold text-orange-400">Hindi (Indian)</SelectItem>
                                         <SelectItem value="hinglish" className="text-orange-400">Hinglish</SelectItem>
+                                        <SelectItem value="mr" className="text-orange-400">Marathi (Indian)</SelectItem>
                                         <SelectItem value="ta" className="text-orange-400">Tamil (Indian)</SelectItem>
                                         <SelectItem value="te" className="text-orange-400">Telugu (Indian)</SelectItem>
+                                        <SelectItem value="bn" className="text-orange-400">Bengali (Indian)</SelectItem>
+                                        <SelectItem value="ur" className="text-orange-400">Urdu (Indian)</SelectItem>
+                                        <SelectItem value="ml" className="text-orange-400">Malayalam (Indian)</SelectItem>
+                                        <SelectItem value="kn" className="text-orange-400">Kannada (Indian)</SelectItem>
+                                        <SelectItem value="gu" className="text-orange-400">Gujarati (Indian)</SelectItem>
+                                        <SelectItem value="pa" className="text-orange-400">Punjabi (Indian)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                {selectedLanguage === "hinglish" && (
+                                    <p className="text-[10px] text-primary mt-1 px-1 font-medium animate-in fade-in slide-in-from-top-1">
+                                        Best for mixed Hindi + English speech. Brand names stay in English.
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="col-span-2 sm:col-span-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
+                                    Script Output
+                                </label>
+                                <Select value={selectedScript} onValueChange={setSelectedScript}>
+                                    <SelectTrigger className="bg-card/50 border-white/10 h-12">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
+                                        <SelectItem value="Auto">Default</SelectItem>
+                                        <SelectItem value="Hindi">Hindi (Devanagari)</SelectItem>
+                                        <SelectItem value="Mixed">Mixed (Hindi + English Script)</SelectItem>
+                                        <SelectItem value="Romanized">Romanized Hindi (English Letters)</SelectItem>
+                                        <SelectItem value="Urdu">Urdu (Arabic)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="col-span-2 sm:col-span-1 flex items-end">
+                                <Button
+                                    onClick={handleUpload}
+                                    disabled={!selectedFile || isUploading || !!activeJobId}
+                                    className="h-12 w-full rounded-xl font-black italic uppercase text-xs tracking-widest shadow-lg shadow-primary/20"
+                                >
+                                    {isUploading ? (
+                                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading</>
+                                    ) : activeJobId ? (
+                                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing</>
+                                    ) : (
+                                        <><Mic className="w-4 h-4 mr-2" /> Transcribe</>
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Job History */}
+                        <div className="space-y-4">
+                            <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                Recent Transcriptions
+                            </h3>
+
+                            {jobs.length === 0 ? (
+                                <div className="text-center py-12 text-muted-foreground">
+                                    <FileJson2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                                    <p>No transcriptions yet</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {jobs.map(job => (
+                                        <div
+                                            key={job.id}
+                                            className="flex items-center gap-4 p-4 rounded-2xl bg-card/30 border border-white/5 hover:border-white/10 transition-all group"
+                                        >
+                                            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
+                                                <FileAudio className="w-5 h-5 text-muted-foreground" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium truncate">{job.fileName}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {getStatusBadge(job)}
+                                                {job.hasOutput && (
+                                                    <>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 opacity-0 group-hover:opacity-100"
+                                                            onClick={() => {
+                                                                try {
+                                                                    const parsedResult = JSON.parse(job.transcriptionOutput || "{}");
+                                                                    if (parsedResult.error) {
+                                                                        toast.error("No content saved for this job");
+                                                                        return;
+                                                                    }
+                                                                    setRawTranscript({
+                                                                        json: parsedResult.json || parsedResult,
+                                                                        srt: parsedResult.srt || "",
+                                                                        txt: parsedResult.txt || ""
+                                                                    });
+                                                                    setActiveTab("json");
+                                                                } catch(e) { 
+                                                                    toast.error("Could not parse legacy job data");
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Play className="w-4 h-4" />
+                                                        </Button>
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
@@ -913,6 +1225,58 @@ export function TranscribeClient({ initialJobs }: TranscribeClientProps) {
 
                         {/* Result Section */}
                         <div className="space-y-4">
+                            {/* Resegment and Capitalization Controls */}
+                            {transcript && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 animate-in fade-in slide-in-from-top-2 duration-300 mb-2">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
+                                            Resegment (Words per chunk)
+                                        </label>
+                                        <Select 
+                                            value={String(resegmentWords)} 
+                                            onValueChange={(val) => setResegmentWords(Number(val))}
+                                        >
+                                            <SelectTrigger className="bg-black/40 border-white/10 h-10 w-full">
+                                                <SelectValue placeholder="Original Layout" />
+                                            </SelectTrigger>
+                                            <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
+                                                <SelectItem value="0">Original Layout</SelectItem>
+                                                <SelectItem value="1">1 Word</SelectItem>
+                                                <SelectItem value="2">2 Words</SelectItem>
+                                                <SelectItem value="3">3 Words</SelectItem>
+                                                <SelectItem value="4">4 Words</SelectItem>
+                                                <SelectItem value="5">5 Words</SelectItem>
+                                                <SelectItem value="6">6 Words</SelectItem>
+                                                <SelectItem value="7">7 Words</SelectItem>
+                                                <SelectItem value="8">8 Words</SelectItem>
+                                                <SelectItem value="9">9 Words</SelectItem>
+                                                <SelectItem value="10">10 Words</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-2">
+                                            Letter Capitalization
+                                        </label>
+                                        <Select 
+                                            value={capitalization} 
+                                            onValueChange={(val: any) => setCapitalization(val)}
+                                        >
+                                            <SelectTrigger className="bg-black/40 border-white/10 h-10 w-full">
+                                                <SelectValue placeholder="Original Case" />
+                                            </SelectTrigger>
+                                            <SelectContent className="bg-card/90 backdrop-blur-xl border-white/10">
+                                                <SelectItem value="original">Original Case</SelectItem>
+                                                <SelectItem value="sentence">Sentence Case</SelectItem>
+                                                <SelectItem value="segment">Segment Case</SelectItem>
+                                                <SelectItem value="word">Capitalize Each Word</SelectItem>
+                                                <SelectItem value="uppercase">ALL CAPS</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Transcription Format Tabs */}
                             <div className="flex items-center justify-between pb-2 mb-4 border-b border-white/5">
                                 <div className="flex bg-white/5 p-1 rounded-xl border border-white/5 space-x-1">
